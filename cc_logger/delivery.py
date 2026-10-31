@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+from importlib.metadata import version
 import logging
 import math
 import random
@@ -11,8 +12,8 @@ from cc_logger.runtime import RuntimeState
 
 logger = logging.getLogger("cc_logger")
 MAX_RETRY_DELAY_SECONDS = 300
-ONLINE_STATUS_MESSAGE = ":green_circle: **ONLINE**"
-OFFLINE_STATUS_MESSAGE = ":red_circle: **OFFLINE**"
+ONLINE_STATUS_MESSAGE = f":green_circle: ONLINE v{version('cc-logger')}"
+OFFLINE_STATUS_MESSAGE = ":red_circle: OFFLINE"
 
 
 @dataclass(frozen=True, slots=True)

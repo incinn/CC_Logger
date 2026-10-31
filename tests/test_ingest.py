@@ -1,4 +1,5 @@
 import unittest
+from importlib.metadata import version
 from unittest.mock import patch
 
 from aiohttp import web
@@ -57,7 +58,7 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
             self.webhook_payloads,
             [
                 {
-                    "content": ":green_circle: ONLINE",
+                    "content": f":green_circle: ONLINE v{version('cc-logger')}",
                     "allowed_mentions": {"parse": []},
                 }
             ],
@@ -69,7 +70,7 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [payload["content"] for payload in self.webhook_payloads],
-            [":green_circle: ONLINE", ":red_circle: OFFLINE"],
+            [f":green_circle: ONLINE v{version('cc-logger')}", ":red_circle: OFFLINE"],
         )
 
     async def test_startup_continues_when_online_status_fails(self) -> None:
