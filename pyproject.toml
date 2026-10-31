@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cc-logger"
+version = "1.0.0"
+description = "Lightweight RuneLite Chat Logger webhook receiver"
+requires-python = ">=3.14"
+dependencies = ["aiohttp>=3.11"]
+
+[project.optional-dependencies]
+dev = ["black>=24.0"]
+
+[project.scripts]
+cc-logger = "cc_logger.server:main"
+
+[tool.black]
+line-length = 88
+target-version = ["py314"]
+
+[tool.uv]
+package = true
