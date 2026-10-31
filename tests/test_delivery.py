@@ -80,9 +80,11 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
     async def test_flush_posts_discord_lines_and_disables_mentions(self) -> None:
         self.add_message(make_payload())
 
-        result = await flush_pending(self.state)
+        with self.assertLogs("cc_logger", level="INFO") as logs:
+            result = await flush_pending(self.state)
 
         self.assertTrue(result.success)
+        self.assertIn("Delivered 1 messages to Discord; 0 pending", logs.output[0])
         self.assertEqual(
             self.webhook_payloads,
             [
@@ -224,6 +226,7 @@ class TestFlushLoop(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(success=True, retry_after_seconds=None),
         ]
         with (
+            self.assertLogs("cc_logger", level="WARNING") as logs,
             patch("cc_logger.delivery.asyncio.sleep", sleep),
             patch("cc_logger.delivery.flush_pending", new_callable=AsyncMock) as flush,
         ):
@@ -232,6 +235,8 @@ class TestFlushLoop(unittest.IsolatedAsyncioTestCase):
                 await flush_loop(self.state)
 
         self.assertEqual([call.args[0] for call in sleep.await_args_list], [10, 25, 10])
+        self.assertIn("retrying in 25.0 seconds", logs.output[0])
+        self.assertIn("attempt 1", logs.output[0])
 
     async def test_applies_exponential_backoff_with_jitter(self) -> None:
         with patch(

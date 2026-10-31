@@ -1,10 +1,13 @@
 import hmac
 import json
+import logging
 
 from aiohttp import web
 
 from cc_logger.chat_message import MAX_PLUGIN_BATCH_SIZE, ChatMessage
 from cc_logger.runtime import STATE_KEY
+
+logger = logging.getLogger(__name__)
 
 
 async def receive_messages(request: web.Request) -> web.Response:
@@ -35,5 +38,18 @@ async def receive_messages(request: web.Request) -> web.Response:
 
     accepted = state.buffer.add_batch(messages)
     if accepted is None:
+        logger.warning(
+            "Rejected batch of %d messages; buffer full at %d pending",
+            len(messages),
+            state.buffer.pending_count,
+        )
         return web.json_response({"error": "In-memory buffer is full"}, status=503)
+    if messages:
+        logger.info(
+            "Ingested batch: received=%d new=%d duplicates=%d pending=%d",
+            len(messages),
+            accepted,
+            len(messages) - accepted,
+            state.buffer.pending_count,
+        )
     return web.json_response({"accepted": accepted}, status=202)

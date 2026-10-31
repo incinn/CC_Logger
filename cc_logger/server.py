@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from importlib.metadata import version
 
 from aiohttp import ClientSession, ClientTimeout, web
 
@@ -13,6 +14,7 @@ from cc_logger.delivery import (
     send_status,
 )
 from cc_logger.ingest import receive_messages
+from cc_logger.logging_config import configure_logging
 from cc_logger.runtime import CONFIG_KEY, STATE_KEY, RuntimeState
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,15 @@ MAX_REQUEST_BYTES = 1_048_576
 
 async def _start_app(app: web.Application) -> None:
     config = app[CONFIG_KEY]
+    logger.info(
+        "Starting CC Logger v%s on %s:%d (flush interval %.1fs, max pending %d, max dedupe IDs %d)",
+        version("cc-logger"),
+        config.host,
+        config.port,
+        config.flush_interval_seconds,
+        config.max_pending_messages,
+        config.max_dedupe_ids,
+    )
     state = RuntimeState(
         config=config,
         buffer=ChatBuffer(
@@ -38,6 +49,9 @@ async def _start_app(app: web.Application) -> None:
 
 async def _stop_app(app: web.Application) -> None:
     state = app[STATE_KEY]
+    logger.info(
+        "Stopping CC Logger with %d messages pending", state.buffer.pending_count
+    )
     if state.flush_task is not None:
         state.flush_task.cancel()
         await asyncio.gather(state.flush_task, return_exceptions=True)
@@ -61,7 +75,7 @@ def create_app(config: Config) -> web.Application:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
+    configure_logging()
     config = Config.from_env()
     web.run_app(create_app(config), host=config.host, port=config.port)
 

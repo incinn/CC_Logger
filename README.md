@@ -57,6 +57,7 @@ Discord's 2,000-character limit. Mention parsing is disabled.
 | ------------------------ | --------- | --------------------------------------------- |
 | `HOST`                   | `0.0.0.0` | HTTP bind address                             |
 | `PORT`                   | `8080`    | HTTP port                                     |
+| `LOG_LEVEL`              | `INFO`    | Console verbosity (`DEBUG` through `CRITICAL`) |
 | `INGEST_TOKEN`           | Required  | Shared secret checked against `Authorization` |
 | `DISCORD_WEBHOOK_URL`    | Required  | Discord incoming webhook URL                  |
 | `FLUSH_INTERVAL_SECONDS` | `30`      | Webhook flush interval                        |

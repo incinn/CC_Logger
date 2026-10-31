@@ -80,6 +80,11 @@ async def flush_pending(state: RuntimeState) -> FlushResult:
                 return FlushResult(success=False)
 
             state.buffer.discard(count)
+            logger.info(
+                "Delivered %d messages to Discord; %d pending",
+                count,
+                state.buffer.pending_count,
+            )
         return FlushResult(success=True)
 
 
@@ -132,4 +137,10 @@ async def flush_loop(state: RuntimeState) -> None:
             failure_count += 1
             next_delay = _retry_delay(
                 interval, failure_count, result.retry_after_seconds
+            )
+            logger.warning(
+                "Discord delivery failed; retrying in %.1f seconds (attempt %d; %d pending)",
+                next_delay,
+                failure_count,
+                state.buffer.pending_count,
             )

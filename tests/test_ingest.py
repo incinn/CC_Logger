@@ -7,7 +7,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from cc_logger.chat_message import MAX_PLUGIN_BATCH_SIZE, ChatMessage
 from cc_logger.config import Config
-from cc_logger.runtime import STATE_KEY
+from cc_logger.runtime import CONFIG_KEY, STATE_KEY
 from cc_logger.server import create_app
 
 
@@ -63,6 +63,21 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
                 }
             ],
         )
+
+    async def test_logs_startup_configuration(self) -> None:
+        client = TestClient(TestServer(create_app(self.app[CONFIG_KEY])))
+
+        try:
+            with self.assertLogs("cc_logger.server", level="INFO") as logs:
+                await client.start_server()
+        finally:
+            await client.close()
+
+        output = "\n".join(logs.output)
+        self.assertIn(f"Starting CC Logger v{version('cc-logger')}", output)
+        self.assertIn("127.0.0.1:0", output)
+        self.assertIn("flush interval 3600.0s", output)
+        self.assertIn("max pending 20000", output)
 
     async def test_sends_offline_status_on_shutdown(self) -> None:
         await self.client.close()
@@ -133,23 +148,25 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 401)
 
     async def test_accepts_valid_message_batch(self) -> None:
-        response = await self.client.post(
-            "/messages",
-            headers={"Authorization": "test-token"},
-            json=[
-                {
-                    "id": 123,
-                    "timestamp": "2021-01-01T00:00:00Z",
-                    "chatType": "CLAN",
-                    "chatName": "IronForged",
-                    "sender": "Player",
-                    "message": "Hello",
-                }
-            ],
-        )
+        with self.assertLogs("cc_logger.ingest", level="INFO") as logs:
+            response = await self.client.post(
+                "/messages",
+                headers={"Authorization": "test-token"},
+                json=[
+                    {
+                        "id": 123,
+                        "timestamp": "2021-01-01T00:00:00Z",
+                        "chatType": "CLAN",
+                        "chatName": "IronForged",
+                        "sender": "Player",
+                        "message": "Hello",
+                    }
+                ],
+            )
 
         self.assertEqual(response.status, 202)
         self.assertEqual(await response.json(), {"accepted": 1})
+        self.assertIn("received=1 new=1 duplicates=0 pending=1", logs.output[0])
 
     async def test_rejects_invalid_payload(self) -> None:
         response = await self.client.post(
