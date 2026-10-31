@@ -1,0 +1,25 @@
+name: ci-cd
+
+on:
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    packages: write
+
+jobs:
+    unit-test:
+        uses: ./.github/workflows/unit-test.yml
+
+    formatting:
+        uses: ./.github/workflows/formatting.yml
+
+    build-and-publish:
+        if: github.ref == 'refs/heads/main'
+        needs:
+            - unit-test
+            - formatting
+        uses: ./.github/workflows/publish.yml
