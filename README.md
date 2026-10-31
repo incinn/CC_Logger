@@ -25,7 +25,7 @@ contains the shared secret.
 
 `POST /messages` accepts the plugin's JSON array, containing up to 30 entries.
 Each entry must include `id`, `timestamp`, `chatType`, `chatName`, `sender`,
-`rank`, and `message`. Only `chatType: "CLAN"` is accepted. Timestamps must
+and `message`. Only `chatType: "CLAN"` is accepted. Timestamps must
 include a timezone. Batches containing any other chat type are rejected whole.
 
 Successful requests return HTTP 202 with the count of newly buffered messages.
