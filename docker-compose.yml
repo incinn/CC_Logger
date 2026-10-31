@@ -1,0 +1,27 @@
+services:
+    cc_logger:
+        build:
+            context: .
+            target: dev
+        image: cc-logger:dev
+        restart: unless-stopped
+        env_file:
+            - path: .env
+              required: false
+        ports:
+            - "${PORT:-8080}:${PORT:-8080}"
+        volumes:
+            - ./cc_logger:/app/cc_logger
+            - ./tests:/app/tests
+
+    cc_logger_prod:
+        build:
+            context: .
+            target: prod
+        image: cc-logger:prod
+        restart: unless-stopped
+        env_file:
+            - path: .env
+              required: false
+        ports:
+            - "${PORT:-8080}:${PORT:-8080}"
