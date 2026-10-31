@@ -5,10 +5,17 @@ from aiohttp import ClientSession, ClientTimeout, web
 
 from cc_logger.chat_buffer import ChatBuffer
 from cc_logger.config import Config
-from cc_logger.delivery import flush_loop, flush_pending
+from cc_logger.delivery import (
+    OFFLINE_STATUS_MESSAGE,
+    ONLINE_STATUS_MESSAGE,
+    flush_loop,
+    flush_pending,
+    send_status,
+)
 from cc_logger.ingest import receive_messages
 from cc_logger.runtime import CONFIG_KEY, STATE_KEY, RuntimeState
 
+logger = logging.getLogger(__name__)
 MAX_REQUEST_BYTES = 1_048_576
 
 
@@ -25,6 +32,7 @@ async def _start_app(app: web.Application) -> None:
         flush_lock=asyncio.Lock(),
     )
     app[STATE_KEY] = state
+    await send_status(state, ONLINE_STATUS_MESSAGE)
     state.flush_task = asyncio.create_task(flush_loop(state))
 
 
@@ -33,8 +41,14 @@ async def _stop_app(app: web.Application) -> None:
     if state.flush_task is not None:
         state.flush_task.cancel()
         await asyncio.gather(state.flush_task, return_exceptions=True)
-    await flush_pending(state)
-    await state.session.close()
+    try:
+        await flush_pending(state)
+    except Exception:
+        logger.exception("Unexpected error flushing messages during shutdown")
+    try:
+        await send_status(state, OFFLINE_STATUS_MESSAGE)
+    finally:
+        await state.session.close()
 
 
 def create_app(config: Config) -> web.Application:

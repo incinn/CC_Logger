@@ -11,12 +11,38 @@ from cc_logger.runtime import RuntimeState
 
 logger = logging.getLogger("cc_logger")
 MAX_RETRY_DELAY_SECONDS = 300
+ONLINE_STATUS_MESSAGE = ":green_circle: **ONLINE**"
+OFFLINE_STATUS_MESSAGE = ":red_circle: **OFFLINE**"
 
 
 @dataclass(frozen=True, slots=True)
 class FlushResult:
     success: bool
     retry_after_seconds: float | None = None
+
+
+async def send_status(state: RuntimeState, message: str) -> bool:
+    try:
+        async with state.session.post(
+            state.config.discord_webhook_url,
+            json={"content": message, "allowed_mentions": {"parse": []}},
+        ) as response:
+            if not 200 <= response.status < 300:
+                logger.warning(
+                    "Discord webhook returned HTTP %s for status notification",
+                    response.status,
+                )
+                return False
+    except (ClientError, asyncio.TimeoutError) as error:
+        logger.warning(
+            "Discord webhook status notification failed (%s)",
+            type(error).__name__,
+        )
+        return False
+    except Exception:
+        logger.exception("Unexpected error sending Discord webhook status notification")
+        return False
+    return True
 
 
 async def flush_pending(state: RuntimeState) -> FlushResult:
