@@ -1,0 +1,48 @@
+services:
+    cc_logger:
+        build:
+            context: .
+            target: dev
+        image: cc-logger:dev
+        restart: unless-stopped
+        env_file:
+            - path: .env
+              required: false
+        secrets:
+            - source: auth_tokens
+              target: auth_tokens.json
+        ports:
+            - "127.0.0.1:${PORT:-8080}:${PORT:-8080}"
+        volumes:
+            - ./cc_logger:/app/cc_logger
+            - ./tests:/app/tests
+
+    cc_logger_prod:
+        build:
+            context: .
+            target: prod
+        image: cc-logger:prod
+        restart: unless-stopped
+        env_file:
+            - path: .env
+              required: false
+        secrets:
+            - source: auth_tokens
+              target: auth_tokens.json
+        ports:
+            - "127.0.0.1:${PORT:-8080}:${PORT:-8080}"
+        read_only: true
+        init: true
+        cap_drop:
+            - ALL
+        security_opt:
+            - no-new-privileges:true
+        pids_limit: 64
+        mem_limit: 512m
+        cpus: 1.0
+        tmpfs:
+            - /tmp:rw,noexec,nosuid,size=16m
+
+secrets:
+    auth_tokens:
+        file: ./auth_tokens.json

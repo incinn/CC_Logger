@@ -1,0 +1,17 @@
+name: pull-request
+
+on:
+    pull_request:
+        branches:
+            - main
+        types:
+            - opened
+            - synchronize
+            - reopened
+
+jobs:
+    unit-test:
+        uses: ./.github/workflows/unit-test.yml
+
+    formatting:
+        uses: ./.github/workflows/formatting.yml
