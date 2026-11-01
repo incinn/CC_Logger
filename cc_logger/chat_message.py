@@ -6,6 +6,7 @@ DISCORD_MESSAGE_LIMIT = 2000
 MAX_PLUGIN_BATCH_SIZE = 30
 WEBHOOK_CONTENT_PREFIX = "\u200b\n"
 RUNELITE_IMAGE_TAG_PATTERN = re.compile(r"<img=\d+>")
+RUNELITE_COLOR_TAG_PATTERN = re.compile(r"</?col(?:=[0-9a-f]+)?>", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +53,7 @@ class ChatMessage:
         message = payload.get("message")
         if not isinstance(message, str):
             raise ValueError("message must be a string")
+        message = RUNELITE_COLOR_TAG_PATTERN.sub("", message)
         if RUNELITE_IMAGE_TAG_PATTERN.search(message):
             message = RUNELITE_IMAGE_TAG_PATTERN.sub(" ", message)
             message = re.sub(r" {2,}", " ", message).strip()

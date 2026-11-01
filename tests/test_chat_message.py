@@ -63,6 +63,19 @@ class TestChatMessage(unittest.TestCase):
 
         self.assertEqual(message.message, "Hello world")
 
+    def test_removes_surrounding_runelite_color_tags_from_message(self) -> None:
+        payload = make_payload()
+        payload["sender"] = "IronForged"
+        payload["message"] = "<col=313131>LilBuff has joined.</col>"
+
+        message = ChatMessage.from_payload(payload)
+
+        self.assertEqual(message.message, "LilBuff has joined.")
+        self.assertEqual(
+            message.format_discord(),
+            "-# <t:1609459200:t> *LilBuff has joined.* (1)\n",
+        )
+
     def test_rejects_line_that_cannot_fit_webhook_prefix(self) -> None:
         payload = make_payload()
         payload["message"] = "x" * 1968
