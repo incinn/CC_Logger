@@ -58,7 +58,7 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
         self.config = Config(
             host="127.0.0.1",
             port=0,
-            authorization_token="test-token",
+            auth_tokens=(("Alice", "test-token"),),
             discord_webhook_url=str(self.webhook_server.make_url("/webhook")),
         )
         self.buffer = ChatBuffer()
@@ -194,7 +194,7 @@ class TestFlushLoop(unittest.IsolatedAsyncioTestCase):
             config=Config(
                 host="127.0.0.1",
                 port=0,
-                authorization_token="test-token",
+                auth_tokens=(("Alice", "test-token"),),
                 discord_webhook_url="https://discord.com/api/webhooks/test",
                 flush_interval_seconds=10,
             ),

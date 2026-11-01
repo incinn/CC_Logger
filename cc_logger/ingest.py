@@ -13,9 +13,12 @@ logger = logging.getLogger(__name__)
 async def receive_messages(request: web.Request) -> web.Response:
     state = request.app[STATE_KEY]
     supplied_token = request.headers.get("Authorization", "")
-    if not hmac.compare_digest(
-        supplied_token.encode("utf-8"), state.config.authorization_token.encode("utf-8")
-    ):
+    supplied_token_bytes = supplied_token.encode("utf-8")
+    client_name = None
+    for name, token in state.config.auth_tokens:
+        if hmac.compare_digest(supplied_token_bytes, token.encode("utf-8")):
+            client_name = name
+    if client_name is None:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
     if request.content_type != "application/json":
@@ -39,14 +42,16 @@ async def receive_messages(request: web.Request) -> web.Response:
     accepted = state.buffer.add_batch(messages)
     if accepted is None:
         logger.warning(
-            "Rejected batch of %d messages; buffer full at %d pending",
+            "Rejected batch from client=%s: %d messages; buffer full at %d pending",
+            client_name,
             len(messages),
             state.buffer.pending_count,
         )
         return web.json_response({"error": "In-memory buffer is full"}, status=503)
     if messages:
         logger.info(
-            "Ingested batch: received=%d new=%d duplicates=%d pending=%d",
+            "Ingested batch from client=%s: received=%d new=%d duplicates=%d pending=%d",
+            client_name,
             len(messages),
             accepted,
             len(messages) - accepted,

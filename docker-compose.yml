@@ -8,6 +8,9 @@ services:
         env_file:
             - path: .env
               required: false
+        secrets:
+            - source: auth_tokens
+              target: auth_tokens.json
         ports:
             - "127.0.0.1:${PORT:-8080}:${PORT:-8080}"
         volumes:
@@ -23,6 +26,9 @@ services:
         env_file:
             - path: .env
               required: false
+        secrets:
+            - source: auth_tokens
+              target: auth_tokens.json
         ports:
             - "127.0.0.1:${PORT:-8080}:${PORT:-8080}"
         read_only: true
@@ -36,3 +42,7 @@ services:
         cpus: 1.0
         tmpfs:
             - /tmp:rw,noexec,nosuid,size=16m
+
+secrets:
+    auth_tokens:
+        file: ./auth_tokens.json

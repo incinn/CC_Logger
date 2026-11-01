@@ -27,7 +27,7 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
         config = Config(
             host="127.0.0.1",
             port=0,
-            authorization_token="test-token",
+            auth_tokens=(("Alice", "test-token"), ("Bob", "bob-token")),
             discord_webhook_url=str(self.webhook_server.make_url("/webhook")),
             flush_interval_seconds=3600,
         )
@@ -93,7 +93,7 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
         config = Config(
             host="127.0.0.1",
             port=0,
-            authorization_token="test-token",
+            auth_tokens=(("Alice", "test-token"), ("Bob", "bob-token")),
             discord_webhook_url=str(self.webhook_server.make_url("/webhook")),
             flush_interval_seconds=3600,
         )
@@ -166,7 +166,29 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status, 202)
         self.assertEqual(await response.json(), {"accepted": 1})
+        self.assertIn("client=Alice", logs.output[0])
         self.assertIn("received=1 new=1 duplicates=0 pending=1", logs.output[0])
+
+    async def test_accepts_second_client_token_and_logs_client_name(self) -> None:
+        with self.assertLogs("cc_logger.ingest", level="INFO") as logs:
+            response = await self.client.post(
+                "/messages",
+                headers={"Authorization": "bob-token"},
+                json=[
+                    {
+                        "id": 456,
+                        "timestamp": "2021-01-01T00:00:00Z",
+                        "chatType": "CLAN",
+                        "chatName": "IronForged",
+                        "sender": "Player",
+                        "message": "Hello from Bob",
+                    }
+                ],
+            )
+
+        self.assertEqual(response.status, 202)
+        self.assertIn("client=Bob", logs.output[0])
+        self.assertNotIn("bob-token", logs.output[0])
 
     async def test_rejects_invalid_payload(self) -> None:
         response = await self.client.post(
@@ -211,7 +233,10 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await response.json(), {"accepted": 0})
 
     async def test_returns_service_unavailable_when_buffer_is_full(self) -> None:
-        with patch.object(self.app[STATE_KEY].buffer, "add_batch", return_value=None):
+        with (
+            patch.object(self.app[STATE_KEY].buffer, "add_batch", return_value=None),
+            self.assertLogs("cc_logger.ingest", level="WARNING") as logs,
+        ):
             response = await self.client.post(
                 "/messages",
                 headers={"Authorization": "test-token"},
@@ -228,6 +253,7 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(response.status, 503)
+        self.assertIn("client=Alice", logs.output[0])
 
     async def test_rejects_mixed_batch_without_buffering_clan_messages(self) -> None:
         response = await self.client.post(
