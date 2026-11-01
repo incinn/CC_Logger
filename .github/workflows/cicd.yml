@@ -23,3 +23,10 @@ jobs:
             - unit-test
             - formatting
         uses: ./.github/workflows/publish.yml
+
+    tag-release:
+        if: github.ref == 'refs/heads/main'
+        needs: build-and-publish
+        permissions:
+            contents: write
+        uses: ./.github/workflows/tag-release.yml
