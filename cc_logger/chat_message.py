@@ -70,8 +70,15 @@ class ChatMessage:
             raise ValueError("Formatted message exceeds Discord's 2000-character limit")
         return result
 
-    def format_discord(self) -> str:
+    def format_discord(self, confidence: int = 1) -> str:
+        if (
+            isinstance(confidence, bool)
+            or not isinstance(confidence, int)
+            or confidence < 1
+        ):
+            raise ValueError("confidence must be a positive integer")
+
         is_system = self.sender.casefold() == self.chat_name.casefold()
         if is_system:
-            return f"-# <t:{self.timestamp}:t> *{self.message}*\n"
-        return f'<t:{self.timestamp}:t> **{self.sender}** "{self.message}"\n'
+            return f"-# <t:{self.timestamp}:t> *{self.message}* ({confidence})\n"
+        return f'<t:{self.timestamp}:t> **{self.sender}** "{self.message}" ({confidence})\n'

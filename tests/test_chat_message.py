@@ -31,7 +31,7 @@ class TestChatMessage(unittest.TestCase):
         message = ChatMessage.from_payload(make_payload())
 
         self.assertEqual(
-            message.format_discord(), '<t:1609459200:t> **Player** "Hello"\n'
+            message.format_discord(), '<t:1609459200:t> **Player** "Hello" (1)\n'
         )
 
     def test_system_sender_is_omitted_and_content_italicized(self) -> None:
@@ -42,7 +42,7 @@ class TestChatMessage(unittest.TestCase):
 
         self.assertEqual(
             message.format_discord(),
-            "-# <t:1609459200:t> *Hello*\n",
+            "-# <t:1609459200:t> *Hello* (1)\n",
         )
 
     def test_sender_named_iron_forged_is_normal_when_not_chat_name(self) -> None:
@@ -53,7 +53,7 @@ class TestChatMessage(unittest.TestCase):
 
         self.assertEqual(
             message.format_discord(),
-            '<t:1609459200:t> **Iron Forged** "Hello"\n',
+            '<t:1609459200:t> **Iron Forged** "Hello" (1)\n',
         )
 
     def test_removes_runelite_image_tags_from_message(self) -> None:

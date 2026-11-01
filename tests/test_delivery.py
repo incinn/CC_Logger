@@ -89,7 +89,7 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
             self.webhook_payloads,
             [
                 {
-                    "content": '\u200b\n<t:1609459200:t> **Player** "Hello"\n',
+                    "content": '\u200b\n<t:1609459200:t> **Player** "Hello" (1)\n',
                     "allowed_mentions": {"parse": []},
                 }
             ],
@@ -106,7 +106,7 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.success)
         self.assertEqual(
             self.webhook_payloads[0]["content"],
-            "\u200b\n-# <t:1609459200:t> *Restarting*\n",
+            "\u200b\n-# <t:1609459200:t> *Restarting* (1)\n",
         )
 
     async def test_flush_keeps_messages_after_webhook_failure(self) -> None:

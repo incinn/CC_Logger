@@ -1,4 +1,5 @@
 from collections import deque
+from dataclasses import dataclass, field
 import time
 
 from cc_logger.chat_message import (
@@ -6,6 +7,20 @@ from cc_logger.chat_message import (
     WEBHOOK_CONTENT_PREFIX,
     ChatMessage,
 )
+
+
+@dataclass(slots=True)
+class _BufferedMessage:
+    message: ChatMessage
+    received_at: float
+    senders: set[str] = field(default_factory=set)
+    delivered: bool = False
+
+    def __post_init__(self) -> None:
+        self.senders.add(self.message.sender.casefold())
+
+    def format_discord(self) -> str:
+        return self.message.format_discord(confidence=len(self.senders))
 
 
 class ChatBuffer:
@@ -24,9 +39,11 @@ class ChatBuffer:
         self._dedupe_ttl_seconds = dedupe_ttl_seconds
         self._max_pending_messages = max_pending_messages
         self._max_dedupe_ids = max_dedupe_ids
-        self._pending: deque[str] = deque()
+        self._pending: deque[_BufferedMessage] = deque()
         self._seen: dict[int, float] = {}
         self._expiry: deque[tuple[float, int]] = deque()
+        self._messages_by_text: dict[str, _BufferedMessage] = {}
+        self._text_expiry: deque[tuple[float, str]] = deque()
 
     @property
     def pending_count(self) -> int:
@@ -46,16 +63,33 @@ class ChatBuffer:
             batch_ids.add(message.message_id)
             new_messages.append(message)
 
-        if len(self._pending) + len(new_messages) > self._max_pending_messages:
+        new_texts = {
+            message.message
+            for message in new_messages
+            if message.message not in self._messages_by_text
+        }
+        if len(self._pending) + len(new_texts) > self._max_pending_messages:
             return None
         if len(self._seen) + len(new_messages) > self._max_dedupe_ids:
             return None
 
+        accepted = 0
         for message in new_messages:
-            self._pending.append(message.format_discord())
             self._seen[message.message_id] = current_time
             self._expiry.append((current_time, message.message_id))
-        return len(new_messages)
+            buffered_message = self._messages_by_text.get(message.message)
+            if buffered_message is None:
+                buffered_message = _BufferedMessage(message, current_time)
+                self._messages_by_text[message.message] = buffered_message
+                self._text_expiry.append((current_time, message.message))
+                self._pending.append(buffered_message)
+                accepted += 1
+            elif not buffered_message.delivered:
+                sender = message.sender.casefold()
+                if sender not in buffered_message.senders:
+                    buffered_message.senders.add(sender)
+                    accepted += 1
+        return accepted
 
     def peek_chunk(
         self, max_chars: int = DISCORD_MESSAGE_LIMIT - len(WEBHOOK_CONTENT_PREFIX)
@@ -65,7 +99,8 @@ class ChatBuffer:
 
         lines: list[str] = []
         total_chars = 0
-        for line in self._pending:
+        for message in self._pending:
+            line = message.format_discord()
             if total_chars + len(line) > max_chars:
                 break
             lines.append(line)
@@ -78,7 +113,7 @@ class ChatBuffer:
         if count < 0 or count > len(self._pending):
             raise ValueError("count is outside the pending message range")
         for _ in range(count):
-            self._pending.popleft()
+            self._pending.popleft().delivered = True
 
     def _prune_expired(self, now: float) -> None:
         cutoff = now - self._dedupe_ttl_seconds
@@ -86,3 +121,8 @@ class ChatBuffer:
             received_at, message_id = self._expiry.popleft()
             if self._seen.get(message_id) == received_at:
                 del self._seen[message_id]
+        while self._text_expiry and self._text_expiry[0][0] <= cutoff:
+            received_at, message_text = self._text_expiry.popleft()
+            message = self._messages_by_text.get(message_text)
+            if message is not None and message.received_at == received_at:
+                del self._messages_by_text[message_text]
