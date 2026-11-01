@@ -9,7 +9,7 @@ services:
             - path: .env
               required: false
         ports:
-            - "${PORT:-8080}:${PORT:-8080}"
+            - "127.0.0.1:${PORT:-8080}:${PORT:-8080}"
         volumes:
             - ./cc_logger:/app/cc_logger
             - ./tests:/app/tests
@@ -24,4 +24,15 @@ services:
             - path: .env
               required: false
         ports:
-            - "${PORT:-8080}:${PORT:-8080}"
+            - "127.0.0.1:${PORT:-8080}:${PORT:-8080}"
+        read_only: true
+        init: true
+        cap_drop:
+            - ALL
+        security_opt:
+            - no-new-privileges:true
+        pids_limit: 64
+        mem_limit: 512m
+        cpus: 1.0
+        tmpfs:
+            - /tmp:rw,noexec,nosuid,size=16m

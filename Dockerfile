@@ -16,7 +16,8 @@ RUN uv sync --frozen --extra dev
 FROM python:3.14-slim AS runtime
 
 ENV PATH="/opt/venv/bin:$PATH" \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 RUN groupadd --system --gid 10001 cc_logger \
     && useradd --uid 10001 --gid cc_logger --no-create-home \
