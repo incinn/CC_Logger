@@ -17,6 +17,12 @@ jobs:
               id: image
               run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
+            - name: Read package version
+              id: version
+              run: |
+                  VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+                  echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+
             - name: Log in to GitHub Container Registry
               uses: docker/login-action@v3
               with:
@@ -31,5 +37,5 @@ jobs:
                   target: prod
                   push: true
                   tags: |
+                      ${{ steps.image.outputs.image }}:${{ steps.version.outputs.value }}
                       ${{ steps.image.outputs.image }}:latest
-                      ${{ steps.image.outputs.image }}:sha-${{ github.sha }}

@@ -81,7 +81,9 @@ Discord's 2,000-character limit. Mention parsing is disabled.
 
 Pull requests run unit tests, lockfile validation, and formatting checks. Pushes
 to `main` run the same checks, then publish the production image to GitHub
-Container Registry as `latest` and `sha-<commit>` tags.
+Container Registry as `X.Y.Z` and `latest`, using the version in `pyproject.toml`.
+After publishing, CI creates an annotated `vX.Y.Z` Git tag when the package
+version is newer than the latest tag. Bump the project version before release.
 
 ## Tests and formatting
 

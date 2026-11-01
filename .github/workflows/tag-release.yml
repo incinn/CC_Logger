@@ -1,0 +1,42 @@
+name: tag-release
+
+on:
+    workflow_call:
+
+permissions:
+    contents: write
+
+jobs:
+    tag-release:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Read version and latest tag
+              id: version
+              run: |
+                  VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+                  git fetch --tags
+                  LATEST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n1)
+                  LATEST_VERSION=${LATEST_TAG#v}
+                  LATEST_VERSION=${LATEST_VERSION:-0.0.0}
+
+                  if [ "$(printf '%s\n' "$LATEST_VERSION" "$VERSION" | sort -V | tail -n1)" = "$VERSION" ] && [ "$VERSION" != "$LATEST_VERSION" ]; then
+                      echo "create=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "create=false" >> "$GITHUB_OUTPUT"
+                  fi
+                  echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+
+            - name: Create version tag
+              if: steps.version.outputs.create == 'true'
+              env:
+                  VERSION: ${{ steps.version.outputs.value }}
+              run: |
+                  git config --local user.email "github-actions[bot]@users.noreply.github.com"
+                  git config --local user.name "github-actions[bot]"
+                  git tag -a "v${VERSION}" -m "Release v${VERSION}"
+                  git push origin "v${VERSION}"
