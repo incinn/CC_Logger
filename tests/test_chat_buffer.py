@@ -28,87 +28,150 @@ class TestChatBuffer(unittest.TestCase):
             max_dedupe_ids=10,
         )
 
-    def test_adds_message_and_deduplicates_by_id(self) -> None:
+    def add_batch(
+        self,
+        messages: list[ChatMessage],
+        *,
+        client_name: str = "Alice",
+        now: float | None = None,
+    ) -> int | None:
+        return self.buffer.add_batch(messages, client_name=client_name, now=now)
+
+    def test_adds_message_and_deduplicates_by_fingerprint(self) -> None:
         message = ChatMessage.from_payload(make_payload())
 
-        self.assertEqual(self.buffer.add_batch([message], now=0), 1)
-        self.assertEqual(self.buffer.add_batch([message], now=1), 0)
+        self.assertEqual(self.add_batch([message], now=0), 1)
+        self.assertEqual(self.add_batch([message], now=1), 0)
         self.assertEqual(self.buffer.pending_count, 1)
 
-    def test_deduplicates_repeated_ids_inside_batch(self) -> None:
+    def test_deduplicates_repeated_fingerprints_inside_batch(self) -> None:
         message = ChatMessage.from_payload(make_payload())
 
-        self.assertEqual(self.buffer.add_batch([message, message], now=0), 1)
+        self.assertEqual(self.add_batch([message, message], now=0), 1)
         self.assertEqual(self.buffer.pending_count, 1)
 
-    def test_increases_confidence_for_exact_text_from_distinct_senders(self) -> None:
-        first = ChatMessage.from_payload(make_payload(sender="Alice"))
-        second = ChatMessage.from_payload(make_payload(message_id=2, sender="Bob"))
-
-        self.assertEqual(self.buffer.add_batch([first], now=0), 1)
-        self.assertEqual(self.buffer.add_batch([second], now=1), 1)
-        self.assertEqual(
-            self.buffer.peek_chunk(),
-            ('<t:1609459200:t> **Alice** "Hello" (2)\n', 1),
+    def test_increases_confidence_for_same_author_content_within_three_seconds(
+        self,
+    ) -> None:
+        first = ChatMessage.from_payload(
+            make_payload(
+                message_id=1,
+                timestamp="2021-01-01T00:00:00.001Z",
+                sender="OriginalSender",
+            )
         )
-        self.assertEqual(self.buffer.pending_count, 1)
-
-    def test_same_sender_does_not_increase_confidence(self) -> None:
-        first = ChatMessage.from_payload(make_payload(sender="Alice"))
-        repeated = ChatMessage.from_payload(make_payload(message_id=2, sender="Alice"))
-
-        self.buffer.add_batch([first], now=0)
-        self.assertEqual(self.buffer.add_batch([repeated], now=1), 0)
-        self.assertEqual(
-            self.buffer.peek_chunk(),
-            ('<t:1609459200:t> **Alice** "Hello" (1)\n', 1),
-        )
-
-    def test_discards_exact_text_received_after_delivery(self) -> None:
-        first = ChatMessage.from_payload(make_payload(sender="Alice"))
-        repeated = ChatMessage.from_payload(make_payload(message_id=2, sender="Bob"))
-        self.buffer.add_batch([first], now=0)
-        self.buffer.discard(1)
-
-        self.assertEqual(self.buffer.add_batch([repeated], now=1), 0)
-        self.assertEqual(self.buffer.pending_count, 0)
-
-    def test_different_text_is_not_merged(self) -> None:
-        first = ChatMessage.from_payload(make_payload(message="Hello"))
         second = ChatMessage.from_payload(
-            make_payload(message_id=2, sender="Bob", message="hello")
+            make_payload(
+                message_id=2,
+                timestamp="2021-01-01T00:00:03.999Z",
+                sender="OriginalSender",
+            )
         )
 
-        self.buffer.add_batch([first, second], now=0)
+        self.assertEqual(self.add_batch([first], now=0), 1)
+        self.assertEqual(self.add_batch([second], client_name="Bob", now=1), 1)
+        self.assertEqual(
+            self.buffer.peek_chunk(),
+            ('<t:1609459200:t> **OriginalSender** "Hello" (2)\n', 1),
+        )
+        self.assertEqual(self.buffer.pending_count, 1)
+
+    def test_does_not_merge_same_author_content_more_than_three_seconds_apart(
+        self,
+    ) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=1))
+        second = ChatMessage.from_payload(
+            make_payload(message_id=2, timestamp="2021-01-01T00:00:04Z")
+        )
+
+        self.add_batch([first], now=0)
+        self.assertEqual(self.add_batch([second], client_name="Bob", now=1), 1)
 
         self.assertEqual(
             self.buffer.peek_chunk(),
             (
                 '<t:1609459200:t> **Player** "Hello" (1)\n'
-                '<t:1609459200:t> **Bob** "hello" (1)\n',
+                '<t:1609459204:t> **Player** "Hello" (1)\n',
                 2,
             ),
         )
 
-    def test_expires_dedupe_ids(self) -> None:
+    def test_timestamp_tolerance_uses_first_observation_as_anchor(self) -> None:
+        first = ChatMessage.from_payload(make_payload(timestamp="2021-01-01T00:00:00Z"))
+        second = ChatMessage.from_payload(
+            make_payload(message_id=2, timestamp="2021-01-01T00:00:03Z")
+        )
+        third = ChatMessage.from_payload(
+            make_payload(message_id=3, timestamp="2021-01-01T00:00:06Z")
+        )
+
+        self.add_batch([first], now=0)
+        self.add_batch([second], client_name="Bob", now=1)
+        self.add_batch([third], client_name="Charlie", now=2)
+
+        self.assertEqual(self.buffer.pending_count, 2)
+        self.assertEqual(
+            self.buffer.peek_chunk(),
+            (
+                '<t:1609459200:t> **Player** "Hello" (2)\n'
+                '<t:1609459206:t> **Player** "Hello" (1)\n',
+                2,
+            ),
+        )
+
+    def test_same_client_retry_does_not_increase_confidence(self) -> None:
         message = ChatMessage.from_payload(make_payload())
-        self.buffer.add_batch([message], now=0)
+
+        self.add_batch([message], now=0)
+        self.assertEqual(self.add_batch([message], now=1), 0)
+        self.assertEqual(
+            self.buffer.peek_chunk(),
+            ('<t:1609459200:t> **Player** "Hello" (1)\n', 1),
+        )
+
+    def test_discards_same_fingerprint_received_after_delivery(self) -> None:
+        message = ChatMessage.from_payload(make_payload(message_id=1))
+        repeat = ChatMessage.from_payload(make_payload(message_id=2))
+        self.add_batch([message], now=0)
+        self.buffer.discard(1)
+
+        self.assertEqual(self.add_batch([repeat], client_name="Bob", now=1), 0)
+        self.assertEqual(self.buffer.pending_count, 0)
+
+    def test_same_text_from_different_authors_is_not_merged(self) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=1, sender="Alice"))
+        second = ChatMessage.from_payload(make_payload(message_id=2, sender="Bob"))
+
+        self.add_batch([first, second], now=0)
+
+        self.assertEqual(
+            self.buffer.peek_chunk(),
+            (
+                '<t:1609459200:t> **Alice** "Hello" (1)\n'
+                '<t:1609459200:t> **Bob** "Hello" (1)\n',
+                2,
+            ),
+        )
+
+    def test_expires_dedupe_fingerprints(self) -> None:
+        message = ChatMessage.from_payload(make_payload())
+        self.add_batch([message], now=0)
 
         replacement = ChatMessage.from_payload(
             make_payload(timestamp="2021-01-01T00:00:01Z")
         )
-        self.assertEqual(self.buffer.add_batch([replacement], now=61), 1)
+        self.assertEqual(self.add_batch([replacement], now=61), 1)
         self.assertEqual(self.buffer.pending_count, 2)
 
     def test_rejects_batch_that_exceeds_memory_limit_atomically(self) -> None:
         first = ChatMessage.from_payload(make_payload(message_id=1, message="first"))
         second = ChatMessage.from_payload(make_payload(message_id=2, message="second"))
         third = ChatMessage.from_payload(make_payload(message_id=3, message="third"))
-        self.buffer.add_batch([first], now=0)
+        self.add_batch([first], now=0)
 
-        self.assertIsNone(self.buffer.add_batch([second, third], now=1))
+        self.assertIsNone(self.add_batch([second, third], now=1))
         self.assertEqual(self.buffer.pending_count, 1)
-        self.assertEqual(self.buffer.add_batch([second], now=1), 1)
+        self.assertEqual(self.add_batch([second], now=1), 1)
 
     def test_chunks_lines_under_discord_limit(self) -> None:
         first = ChatMessage.from_payload(make_payload(message_id=1))
@@ -116,7 +179,7 @@ class TestChatBuffer(unittest.TestCase):
         second_payload["message"] = "x" * 1950
         second = ChatMessage.from_payload(second_payload)
         self.buffer = ChatBuffer(max_pending_messages=5, max_dedupe_ids=10)
-        self.buffer.add_batch([first, second], now=0)
+        self.add_batch([first, second], now=0)
 
         content, count = self.buffer.peek_chunk(max_chars=100)
 
@@ -130,16 +193,18 @@ class TestChatBuffer(unittest.TestCase):
             max_dedupe_ids=1,
         )
         first = ChatMessage.from_payload(make_payload(message_id=1))
-        second = ChatMessage.from_payload(make_payload(message_id=2))
+        second = ChatMessage.from_payload(
+            make_payload(message_id=2, message="Different")
+        )
 
-        self.assertEqual(self.buffer.add_batch([first], now=0), 1)
-        self.assertIsNone(self.buffer.add_batch([second], now=1))
+        self.assertEqual(self.add_batch([first], now=0), 1)
+        self.assertIsNone(self.add_batch([second], now=1))
         self.assertEqual(self.buffer.pending_count, 1)
-        self.assertEqual(self.buffer.add_batch([second], now=61), 1)
+        self.assertEqual(self.add_batch([second], now=61), 1)
 
     def test_peek_chunk_includes_line_only_when_it_fits(self) -> None:
         message = ChatMessage.from_payload(make_payload())
-        self.buffer.add_batch([message], now=0)
+        self.add_batch([message], now=0)
         line = message.format_discord()
 
         self.assertEqual(self.buffer.peek_chunk(max_chars=len(line)), (line, 1))

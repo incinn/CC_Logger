@@ -41,7 +41,7 @@ async def receive_messages(request: web.Request) -> web.Response:
     except ValueError as error:
         return web.json_response({"error": str(error)}, status=400)
 
-    accepted = state.buffer.add_batch(messages)
+    accepted = state.buffer.add_batch(messages, client_name=client_name)
     if accepted is None:
         logger.warning(
             "Rejected batch from client=%s: %d messages; buffer full at %d pending",

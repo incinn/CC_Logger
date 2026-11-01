@@ -131,7 +131,8 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
                         "message": "Pending shutdown message",
                     }
                 )
-            ]
+            ],
+            client_name="Alice",
         )
 
         await self.client.close()
@@ -169,6 +170,32 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
         self.assertIn("client=Alice", logs.output[0])
         self.assertIn("received=1 new=1 duplicates=0 pending=1", logs.output[0])
 
+    async def test_debug_logs_raw_payload_without_auth_token(self) -> None:
+        payload = [
+            {
+                "id": 789,
+                "timestamp": "2021-01-01T00:00:00Z",
+                "chatType": "CLAN",
+                "chatName": "IronForged",
+                "sender": "Player",
+                "message": "Compare this raw message",
+            }
+        ]
+
+        with self.assertLogs("cc_logger.ingest", level="DEBUG") as logs:
+            response = await self.client.post(
+                "/messages",
+                headers={"Authorization": "test-token"},
+                json=payload,
+            )
+
+        self.assertEqual(response.status, 202)
+        self.assertIn("client=Alice", logs.output[0])
+        self.assertIn("'id': 789", logs.output[0])
+        self.assertIn("'sender': 'Player'", logs.output[0])
+        self.assertIn("'message': 'Compare this raw message'", logs.output[0])
+        self.assertNotIn("test-token", "\n".join(logs.output))
+
     async def test_accepts_second_client_token_and_logs_client_name(self) -> None:
         with self.assertLogs("cc_logger.ingest", level="INFO") as logs:
             response = await self.client.post(
@@ -189,6 +216,36 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 202)
         self.assertIn("client=Bob", logs.output[0])
         self.assertNotIn("bob-token", logs.output[0])
+
+    async def test_same_message_id_from_second_client_increases_confidence(
+        self,
+    ) -> None:
+        payload = {
+            "id": 123,
+            "timestamp": "2021-01-01T00:00:00Z",
+            "chatType": "CLAN",
+            "chatName": "IronForged",
+            "sender": "Player",
+            "message": "Shared message",
+        }
+        first = await self.client.post(
+            "/messages", headers={"Authorization": "test-token"}, json=[payload]
+        )
+        second_payload = {**payload, "id": 456, "timestamp": "2021-01-01T00:00:03Z"}
+        second = await self.client.post(
+            "/messages",
+            headers={"Authorization": "bob-token"},
+            json=[second_payload],
+        )
+
+        self.assertEqual(first.status, 202)
+        self.assertEqual(second.status, 202)
+        self.assertEqual(await first.json(), {"accepted": 1})
+        self.assertEqual(await second.json(), {"accepted": 1})
+        self.assertEqual(
+            self.app[STATE_KEY].buffer.peek_chunk(),
+            ('<t:1609459200:t> **Player** "Shared message" (2)\n', 1),
+        )
 
     async def test_rejects_invalid_payload(self) -> None:
         response = await self.client.post(

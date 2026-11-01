@@ -1,5 +1,7 @@
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+import hashlib
+import json
 import time
 
 from cc_logger.chat_message import (
@@ -8,19 +10,19 @@ from cc_logger.chat_message import (
     ChatMessage,
 )
 
+MESSAGE_TIMESTAMP_TOLERANCE_SECONDS = 3
 
-@dataclass(slots=True)
+
+@dataclass(slots=True, eq=False)
 class _BufferedMessage:
     message: ChatMessage
     received_at: float
-    senders: set[str] = field(default_factory=set)
+    fingerprint: str
+    clients: set[str]
     delivered: bool = False
 
-    def __post_init__(self) -> None:
-        self.senders.add(self.message.sender.casefold())
-
     def format_discord(self) -> str:
-        return self.message.format_discord(confidence=len(self.senders))
+        return self.message.format_discord(confidence=len(self.clients))
 
 
 class ChatBuffer:
@@ -40,56 +42,98 @@ class ChatBuffer:
         self._max_pending_messages = max_pending_messages
         self._max_dedupe_ids = max_dedupe_ids
         self._pending: deque[_BufferedMessage] = deque()
-        self._seen: dict[int, float] = {}
-        self._expiry: deque[tuple[float, int]] = deque()
-        self._messages_by_text: dict[str, _BufferedMessage] = {}
-        self._text_expiry: deque[tuple[float, str]] = deque()
+        self._seen: dict[str, list[_BufferedMessage]] = {}
+        self._seen_count = 0
+        self._expiry: deque[tuple[float, _BufferedMessage]] = deque()
 
     @property
     def pending_count(self) -> int:
         return len(self._pending)
 
     def add_batch(
-        self, messages: list[ChatMessage], now: float | None = None
+        self,
+        messages: list[ChatMessage],
+        *,
+        client_name: str,
+        now: float | None = None,
     ) -> int | None:
         current_time = time.monotonic() if now is None else now
         self._prune_expired(current_time)
 
-        new_messages: list[ChatMessage] = []
-        batch_ids: set[int] = set()
-        for message in messages:
-            if message.message_id in self._seen or message.message_id in batch_ids:
-                continue
-            batch_ids.add(message.message_id)
-            new_messages.append(message)
-
-        new_texts = {
-            message.message
-            for message in new_messages
-            if message.message not in self._messages_by_text
-        }
-        if len(self._pending) + len(new_texts) > self._max_pending_messages:
-            return None
-        if len(self._seen) + len(new_messages) > self._max_dedupe_ids:
-            return None
-
+        normalized_client_name = client_name.casefold()
+        new_records: list[_BufferedMessage] = []
+        new_records_by_fingerprint: dict[str, list[_BufferedMessage]] = {}
+        planned_clients: dict[_BufferedMessage, set[str]] = {}
         accepted = 0
-        for message in new_messages:
-            self._seen[message.message_id] = current_time
-            self._expiry.append((current_time, message.message_id))
-            buffered_message = self._messages_by_text.get(message.message)
-            if buffered_message is None:
-                buffered_message = _BufferedMessage(message, current_time)
-                self._messages_by_text[message.message] = buffered_message
-                self._text_expiry.append((current_time, message.message))
-                self._pending.append(buffered_message)
-                accepted += 1
-            elif not buffered_message.delivered:
-                sender = message.sender.casefold()
-                if sender not in buffered_message.senders:
-                    buffered_message.senders.add(sender)
+
+        for message in messages:
+            fingerprint = self._fingerprint(message)
+            candidates = self._seen.get(
+                fingerprint, []
+            ) + new_records_by_fingerprint.get(fingerprint, [])
+            matching_records = [
+                record
+                for record in candidates
+                if abs(record.message.timestamp - message.timestamp)
+                <= MESSAGE_TIMESTAMP_TOLERANCE_SECONDS
+            ]
+
+            if matching_records:
+                buffered_message = min(
+                    matching_records,
+                    key=lambda record: abs(
+                        record.message.timestamp - message.timestamp
+                    ),
+                )
+                if buffered_message.delivered:
+                    continue
+
+                clients = planned_clients.get(
+                    buffered_message, buffered_message.clients
+                )
+                if normalized_client_name not in clients:
+                    updated_clients = set(clients)
+                    updated_clients.add(normalized_client_name)
+                    planned_clients[buffered_message] = updated_clients
                     accepted += 1
+                continue
+
+            buffered_message = _BufferedMessage(
+                message,
+                current_time,
+                fingerprint,
+                {normalized_client_name},
+            )
+            new_records.append(buffered_message)
+            new_records_by_fingerprint.setdefault(fingerprint, []).append(
+                buffered_message
+            )
+            accepted += 1
+
+        if len(self._pending) + len(new_records) > self._max_pending_messages:
+            return None
+        if self._seen_count + len(new_records) > self._max_dedupe_ids:
+            return None
+
+        for buffered_message, clients in planned_clients.items():
+            buffered_message.clients = clients
+        for buffered_message in new_records:
+            self._seen.setdefault(buffered_message.fingerprint, []).append(
+                buffered_message
+            )
+            self._expiry.append((current_time, buffered_message))
+            self._pending.append(buffered_message)
+        self._seen_count += len(new_records)
         return accepted
+
+    @staticmethod
+    def _fingerprint(message: ChatMessage) -> str:
+        identity = json.dumps(
+            [message.sender.casefold(), message.message],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
     def peek_chunk(
         self, max_chars: int = DISCORD_MESSAGE_LIMIT - len(WEBHOOK_CONTENT_PREFIX)
@@ -118,11 +162,13 @@ class ChatBuffer:
     def _prune_expired(self, now: float) -> None:
         cutoff = now - self._dedupe_ttl_seconds
         while self._expiry and self._expiry[0][0] <= cutoff:
-            received_at, message_id = self._expiry.popleft()
-            if self._seen.get(message_id) == received_at:
-                del self._seen[message_id]
-        while self._text_expiry and self._text_expiry[0][0] <= cutoff:
-            received_at, message_text = self._text_expiry.popleft()
-            message = self._messages_by_text.get(message_text)
-            if message is not None and message.received_at == received_at:
-                del self._messages_by_text[message_text]
+            received_at, buffered_message = self._expiry.popleft()
+            fingerprint_records = self._seen.get(buffered_message.fingerprint)
+            if (
+                fingerprint_records is not None
+                and buffered_message.received_at == received_at
+            ):
+                fingerprint_records.remove(buffered_message)
+                if not fingerprint_records:
+                    del self._seen[buffered_message.fingerprint]
+                self._seen_count -= 1

@@ -75,7 +75,7 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
         await self.webhook_server.close()
 
     def add_message(self, payload: dict[str, object]) -> None:
-        self.buffer.add_batch([ChatMessage.from_payload(payload)])
+        self.buffer.add_batch([ChatMessage.from_payload(payload)], client_name="Alice")
 
     async def test_flush_posts_discord_lines_and_disables_mentions(self) -> None:
         self.add_message(make_payload())
@@ -165,7 +165,8 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
                 ChatMessage.from_payload(
                     make_payload(message_id=2, message="SECOND" + "x" * 1100)
                 ),
-            ]
+            ],
+            client_name="Alice",
         )
         self.webhook_response_statuses = [204, 503]
 
