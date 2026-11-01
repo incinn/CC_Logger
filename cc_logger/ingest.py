@@ -28,6 +28,8 @@ async def receive_messages(request: web.Request) -> web.Response:
     except json.JSONDecodeError, UnicodeDecodeError:
         return web.json_response({"error": "Invalid JSON"}, status=400)
 
+    logger.debug("Received raw payload from client=%s: %r", client_name, payload)
+
     if not isinstance(payload, list) or len(payload) > MAX_PLUGIN_BATCH_SIZE:
         return web.json_response(
             {"error": f"Expected an array of at most {MAX_PLUGIN_BATCH_SIZE} messages"},
