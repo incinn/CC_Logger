@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import time
+import unicodedata
 
 from cc_logger.chat_message import (
     DISCORD_MESSAGE_LIMIT,
@@ -89,7 +90,9 @@ class ChatBuffer:
                 matching_records = [
                     record
                     for record in fingerprint_candidates
-                    if abs(record.message.timestamp - message.timestamp)
+                    if normalized_client_name
+                    not in planned_clients.get(record, record.clients)
+                    and abs(record.message.timestamp - message.timestamp)
                     <= MESSAGE_TIMESTAMP_TOLERANCE_SECONDS
                 ]
 
@@ -151,8 +154,13 @@ class ChatBuffer:
 
     @staticmethod
     def _fingerprint(message: ChatMessage) -> str:
+        sender = unicodedata.normalize("NFC", message.sender).casefold()
+        sender = unicodedata.normalize("NFC", sender)
+        normalized_message = unicodedata.normalize(
+            "NFC", message.message.replace("\r\n", "\n").replace("\r", "\n")
+        )
         identity = json.dumps(
-            [message.sender.casefold(), message.message],
+            [sender, normalized_message],
             ensure_ascii=False,
             separators=(",", ":"),
         )

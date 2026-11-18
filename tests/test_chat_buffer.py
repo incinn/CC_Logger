@@ -37,14 +37,15 @@ class TestChatBuffer(unittest.TestCase):
     ) -> int | None:
         return self.buffer.add_batch(messages, client_name=client_name, now=now)
 
-    def test_adds_message_and_deduplicates_by_fingerprint(self) -> None:
-        message = ChatMessage.from_payload(make_payload())
+    def test_deduplicates_fingerprint_across_clients_within_window(self) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=1))
+        second = ChatMessage.from_payload(make_payload(message_id=2))
 
-        self.assertEqual(self.add_batch([message], now=0), 1)
-        self.assertEqual(self.add_batch([message], now=1), 0)
+        self.assertEqual(self.add_batch([first], now=0), 1)
+        self.assertEqual(self.add_batch([second], client_name="Bob", now=1), 1)
         self.assertEqual(self.buffer.pending_count, 1)
 
-    def test_deduplicates_repeated_fingerprints_inside_batch(self) -> None:
+    def test_deduplicates_repeated_message_id_inside_batch(self) -> None:
         message = ChatMessage.from_payload(make_payload())
 
         self.assertEqual(self.add_batch([message, message], now=0), 1)
@@ -76,6 +77,39 @@ class TestChatBuffer(unittest.TestCase):
         )
 
         self.assertEqual(self.add_batch([first, second], now=0), 2)
+        self.assertEqual(self.buffer.pending_count, 2)
+
+    def test_fingerprint_fallback_normalizes_unicode_and_line_endings(self) -> None:
+        first = ChatMessage.from_payload(
+            make_payload(
+                message_id=1,
+                sender="Café",
+                message="first\r\nsecond",
+            )
+        )
+        second = ChatMessage.from_payload(
+            make_payload(
+                message_id=2,
+                timestamp="2021-01-01T00:00:01Z",
+                sender="Cafe\u0301",
+                message="first\nsecond",
+            )
+        )
+
+        self.assertEqual(self.add_batch([first], now=0), 1)
+        self.assertEqual(self.add_batch([second], client_name="Bob", now=1), 1)
+        self.assertEqual(self.buffer.pending_count, 1)
+
+    def test_fingerprint_fallback_does_not_merge_repeated_same_client_message(
+        self,
+    ) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=1))
+        second = ChatMessage.from_payload(
+            make_payload(message_id=2, timestamp="2021-01-01T00:00:01Z")
+        )
+
+        self.assertEqual(self.add_batch([first], now=0), 1)
+        self.assertEqual(self.add_batch([second], now=1), 1)
         self.assertEqual(self.buffer.pending_count, 2)
 
     def test_expires_seen_message_ids(self) -> None:
