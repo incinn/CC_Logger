@@ -34,6 +34,29 @@ class TestChatMessage(unittest.TestCase):
             message.format_discord(), "<t:1609459200:t> [1] **Player**: Hello\n"
         )
 
+    def test_escapes_message_markdown_and_collapses_line_breaks(self) -> None:
+        payload = make_payload()
+        payload["message"] = "**bold** [link](https://example.com)\nnext <@123> +!{}.-"
+        message = ChatMessage.from_payload(payload)
+
+        self.assertEqual(
+            message.format_discord(),
+            "<t:1609459200:t> [1] **Player**: "
+            r"\*\*bold\*\* \[link\]\(https://example.com\) "
+            r"next \<@123\> +!{}.-"
+            "\n",
+        )
+
+    def test_escapes_sender_markdown_and_collapses_line_breaks(self) -> None:
+        payload = make_payload()
+        payload["sender"] = "**Player**\n<t:123>"
+        message = ChatMessage.from_payload(payload)
+
+        self.assertEqual(
+            message.format_discord(),
+            r"<t:1609459200:t> [1] **\*\*Player\*\* \<t:123\>**: Hello" "\n",
+        )
+
     def test_system_sender_is_omitted_from_new_format(self) -> None:
         payload = make_payload()
         payload["sender"] = "iRoNfOrGeD"

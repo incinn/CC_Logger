@@ -21,8 +21,10 @@ class Config:
     def __post_init__(self) -> None:
         if not self.host:
             raise ValueError("host must not be empty")
-        if not self.chat_name.strip():
+        chat_name = self.chat_name.strip()
+        if not chat_name:
             raise ValueError("chat_name must not be empty")
+        object.__setattr__(self, "chat_name", chat_name)
         if not 0 <= self.port <= 65535:
             raise ValueError("port must be between 0 and 65535")
         if not self.auth_tokens:

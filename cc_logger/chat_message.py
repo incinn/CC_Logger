@@ -7,6 +7,15 @@ MAX_PLUGIN_BATCH_SIZE = 30
 WEBHOOK_CONTENT_PREFIX = "\u200b\n"
 RUNELITE_IMAGE_TAG_PATTERN = re.compile(r"<img=\d+>")
 RUNELITE_COLOR_TAG_PATTERN = re.compile(r"</?col(?:=[0-9a-f]+)?>", re.IGNORECASE)
+DISCORD_MARKDOWN_CHARACTERS = frozenset(r"\`*_[]()#|<>~")
+
+
+def _escape_discord_text(text: str) -> str:
+    single_line_text = " ".join(text.splitlines())
+    return "".join(
+        f"\\{character}" if character in DISCORD_MARKDOWN_CHARACTERS else character
+        for character in single_line_text
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +91,8 @@ class ChatMessage:
 
         prefix = f"<t:{self.timestamp}:t> [{confidence}] "
         is_system = self.sender.casefold() == self.chat_name.casefold()
+        message = _escape_discord_text(self.message)
         if is_system:
-            return f"-# {prefix}{self.message}\n"
-        return f"{prefix}**{self.sender}**: {self.message}\n"
+            return f"-# {prefix}{message}\n"
+        sender = _escape_discord_text(self.sender)
+        return f"{prefix}**{sender}**: {message}\n"

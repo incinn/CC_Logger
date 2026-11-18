@@ -145,6 +145,17 @@ class TestConfig(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     Config(**(valid | invalid))
 
+    def test_trims_chat_name(self) -> None:
+        config = Config(
+            host="127.0.0.1",
+            port=8080,
+            auth_tokens=(("Alice", "test-token"),),
+            discord_webhook_url="https://example.com/webhook",
+            chat_name="  IronForged  ",
+        )
+
+        self.assertEqual(config.chat_name, "IronForged")
+
     def test_from_env_rejects_invalid_numeric_values(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             auth_tokens_path = Path(directory) / "auth_tokens.json"
