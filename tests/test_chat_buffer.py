@@ -76,12 +76,22 @@ class TestChatBuffer(unittest.TestCase):
         )
         self.assertEqual(self.buffer.pending_count, 1)
 
-    def test_does_not_merge_same_author_content_more_than_three_seconds_apart(
+    def test_merges_same_author_content_within_five_seconds(self) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=1))
+        second = ChatMessage.from_payload(
+            make_payload(message_id=2, timestamp="2021-01-01T00:00:05Z")
+        )
+
+        self.add_batch([first], now=0)
+        self.assertEqual(self.add_batch([second], client_name="Bob", now=1), 1)
+        self.assertEqual(self.buffer.pending_count, 1)
+
+    def test_does_not_merge_same_author_content_more_than_five_seconds_apart(
         self,
     ) -> None:
         first = ChatMessage.from_payload(make_payload(message_id=1))
         second = ChatMessage.from_payload(
-            make_payload(message_id=2, timestamp="2021-01-01T00:00:04Z")
+            make_payload(message_id=2, timestamp="2021-01-01T00:00:06Z")
         )
 
         self.add_batch([first], now=0)
@@ -91,7 +101,7 @@ class TestChatBuffer(unittest.TestCase):
             self.buffer.peek_chunk(),
             (
                 '<t:1609459200:t> **Player** "Hello" (1)\n'
-                '<t:1609459204:t> **Player** "Hello" (1)\n',
+                '<t:1609459206:t> **Player** "Hello" (1)\n',
                 2,
             ),
         )

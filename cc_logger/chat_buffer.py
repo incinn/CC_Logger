@@ -10,7 +10,7 @@ from cc_logger.chat_message import (
     ChatMessage,
 )
 
-MESSAGE_TIMESTAMP_TOLERANCE_SECONDS = 3
+MESSAGE_TIMESTAMP_TOLERANCE_SECONDS = 5
 
 
 @dataclass(slots=True, eq=False)
