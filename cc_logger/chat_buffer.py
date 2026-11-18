@@ -43,6 +43,7 @@ class ChatBuffer:
         self._max_dedupe_ids = max_dedupe_ids
         self._pending: deque[_BufferedMessage] = deque()
         self._seen: dict[str, list[_BufferedMessage]] = {}
+        self._seen_by_message_id: dict[int, list[_BufferedMessage]] = {}
         self._seen_count = 0
         self._expiry: deque[tuple[float, _BufferedMessage]] = deque()
 
@@ -63,20 +64,34 @@ class ChatBuffer:
         normalized_client_name = client_name.casefold()
         new_records: list[_BufferedMessage] = []
         new_records_by_fingerprint: dict[str, list[_BufferedMessage]] = {}
+        new_records_by_message_id: dict[int, list[_BufferedMessage]] = {}
         planned_clients: dict[_BufferedMessage, set[str]] = {}
         accepted = 0
 
         for message in messages:
             fingerprint = self._fingerprint(message)
-            candidates = self._seen.get(
-                fingerprint, []
-            ) + new_records_by_fingerprint.get(fingerprint, [])
+            message_id_candidates = (
+                self._seen_by_message_id.get(message.message_id, [])
+                + new_records_by_message_id.get(message.message_id, [])
+                if message.message_id
+                else []
+            )
             matching_records = [
                 record
-                for record in candidates
-                if abs(record.message.timestamp - message.timestamp)
-                <= MESSAGE_TIMESTAMP_TOLERANCE_SECONDS
+                for record in message_id_candidates
+                if record.fingerprint == fingerprint
             ]
+
+            if not matching_records:
+                fingerprint_candidates = self._seen.get(
+                    fingerprint, []
+                ) + new_records_by_fingerprint.get(fingerprint, [])
+                matching_records = [
+                    record
+                    for record in fingerprint_candidates
+                    if abs(record.message.timestamp - message.timestamp)
+                    <= MESSAGE_TIMESTAMP_TOLERANCE_SECONDS
+                ]
 
             if matching_records:
                 buffered_message = min(
@@ -108,6 +123,10 @@ class ChatBuffer:
             new_records_by_fingerprint.setdefault(fingerprint, []).append(
                 buffered_message
             )
+            if message.message_id:
+                new_records_by_message_id.setdefault(message.message_id, []).append(
+                    buffered_message
+                )
             accepted += 1
 
         if len(self._pending) + len(new_records) > self._max_pending_messages:
@@ -121,6 +140,10 @@ class ChatBuffer:
             self._seen.setdefault(buffered_message.fingerprint, []).append(
                 buffered_message
             )
+            if buffered_message.message.message_id:
+                self._seen_by_message_id.setdefault(
+                    buffered_message.message.message_id, []
+                ).append(buffered_message)
             self._expiry.append((current_time, buffered_message))
             self._pending.append(buffered_message)
         self._seen_count += len(new_records)
@@ -171,4 +194,14 @@ class ChatBuffer:
                 fingerprint_records.remove(buffered_message)
                 if not fingerprint_records:
                     del self._seen[buffered_message.fingerprint]
+                if buffered_message.message.message_id:
+                    message_id_records = self._seen_by_message_id.get(
+                        buffered_message.message.message_id
+                    )
+                    if message_id_records is not None:
+                        message_id_records.remove(buffered_message)
+                        if not message_id_records:
+                            del self._seen_by_message_id[
+                                buffered_message.message.message_id
+                            ]
                 self._seen_count -= 1

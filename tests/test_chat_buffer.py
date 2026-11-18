@@ -50,6 +50,61 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(self.add_batch([message, message], now=0), 1)
         self.assertEqual(self.buffer.pending_count, 1)
 
+    def test_deduplicates_matching_message_id_despite_timestamp_difference(
+        self,
+    ) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=100))
+        second = ChatMessage.from_payload(
+            make_payload(
+                message_id=100,
+                timestamp="2021-01-01T00:01:00Z",
+            )
+        )
+
+        self.assertEqual(self.add_batch([first], now=0), 1)
+        self.assertEqual(self.add_batch([second], client_name="Bob", now=1), 1)
+        self.assertEqual(self.buffer.pending_count, 1)
+        self.assertEqual(
+            self.buffer.peek_chunk(),
+            ('<t:1609459200:t> **Player** "Hello" (2)\n', 1),
+        )
+
+    def test_does_not_deduplicate_message_id_with_different_content(self) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=100))
+        second = ChatMessage.from_payload(
+            make_payload(message_id=100, message="Different")
+        )
+
+        self.assertEqual(self.add_batch([first, second], now=0), 2)
+        self.assertEqual(self.buffer.pending_count, 2)
+
+    def test_expires_seen_message_ids(self) -> None:
+        message = ChatMessage.from_payload(make_payload(message_id=100))
+        self.add_batch([message], now=0)
+        replacement = ChatMessage.from_payload(
+            make_payload(
+                message_id=100,
+                timestamp="2021-01-01T00:01:00Z",
+            )
+        )
+
+        self.assertEqual(self.add_batch([replacement], now=61), 1)
+        self.assertEqual(self.buffer.pending_count, 2)
+
+    def test_zero_message_id_does_not_deduplicate_outside_timestamp_window(
+        self,
+    ) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=0))
+        second = ChatMessage.from_payload(
+            make_payload(
+                message_id=0,
+                timestamp="2021-01-01T00:01:00Z",
+            )
+        )
+
+        self.assertEqual(self.add_batch([first, second], now=0), 2)
+        self.assertEqual(self.buffer.pending_count, 2)
+
     def test_increases_confidence_for_same_author_content_within_three_seconds(
         self,
     ) -> None:
