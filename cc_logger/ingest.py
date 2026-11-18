@@ -40,6 +40,12 @@ async def receive_messages(request: web.Request) -> web.Response:
         messages = [ChatMessage.from_payload(entry) for entry in payload]
     except ValueError as error:
         return web.json_response({"error": str(error)}, status=400)
+    expected_chat_name = state.config.chat_name.casefold()
+    if any(message.chat_name.casefold() != expected_chat_name for message in messages):
+        return web.json_response(
+            {"error": "Message chatName does not match configured CHAT_NAME"},
+            status=400,
+        )
 
     accepted = state.buffer.add_batch(messages, client_name=client_name)
     if accepted is None:

@@ -29,6 +29,7 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
             port=0,
             auth_tokens=(("Alice", "test-token"), ("Bob", "bob-token")),
             discord_webhook_url=str(self.webhook_server.make_url("/webhook")),
+            chat_name="IronForged",
             flush_interval_seconds=3600,
         )
         self.app = create_app(config)
@@ -95,6 +96,7 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
             port=0,
             auth_tokens=(("Alice", "test-token"), ("Bob", "bob-token")),
             discord_webhook_url=str(self.webhook_server.make_url("/webhook")),
+            chat_name="IronForged",
             flush_interval_seconds=3600,
         )
         client = TestClient(TestServer(create_app(config)))
@@ -158,7 +160,7 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
                         "id": 123,
                         "timestamp": "2021-01-01T00:00:00Z",
                         "chatType": "CLAN",
-                        "chatName": "IronForged",
+                        "chatName": "ironforged",
                         "sender": "Player",
                         "message": "Hello",
                     }
@@ -332,6 +334,33 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
                     "chatName": "Friends",
                     "sender": "Player",
                     "message": "Friends message",
+                },
+            ],
+        )
+
+        self.assertEqual(response.status, 400)
+        self.assertEqual(self.app[STATE_KEY].buffer.pending_count, 0)
+
+    async def test_rejects_batch_with_mismatched_chat_name_atomically(self) -> None:
+        response = await self.client.post(
+            "/messages",
+            headers={"Authorization": "test-token"},
+            json=[
+                {
+                    "id": 123,
+                    "timestamp": "2021-01-01T00:00:00Z",
+                    "chatType": "CLAN",
+                    "chatName": "IronForged",
+                    "sender": "Player",
+                    "message": "Valid clan message",
+                },
+                {
+                    "id": 124,
+                    "timestamp": "2021-01-01T00:00:01Z",
+                    "chatType": "CLAN",
+                    "chatName": "OtherClan",
+                    "sender": "Player",
+                    "message": "Mismatched clan message",
                 },
             ],
         )

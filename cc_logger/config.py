@@ -12,6 +12,7 @@ class Config:
     port: int
     auth_tokens: tuple[tuple[str, str], ...]
     discord_webhook_url: str
+    chat_name: str
     flush_interval_seconds: float = 30
     dedupe_ttl_seconds: float = 600
     max_pending_messages: int = 20_000
@@ -20,6 +21,8 @@ class Config:
     def __post_init__(self) -> None:
         if not self.host:
             raise ValueError("host must not be empty")
+        if not self.chat_name.strip():
+            raise ValueError("chat_name must not be empty")
         if not 0 <= self.port <= 65535:
             raise ValueError("port must be between 0 and 65535")
         if not self.auth_tokens:
@@ -58,6 +61,9 @@ class Config:
         webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "")
         if not webhook_url:
             raise ValueError("DISCORD_WEBHOOK_URL must be set")
+        chat_name = os.environ.get("CHAT_NAME", "")
+        if not chat_name.strip():
+            raise ValueError("CHAT_NAME must be set")
 
         try:
             auth_token_data = json.loads(auth_tokens_path.read_text(encoding="utf-8"))
@@ -85,6 +91,7 @@ class Config:
             port=int(os.environ.get("PORT", "8080")),
             auth_tokens=tuple(auth_tokens),
             discord_webhook_url=webhook_url,
+            chat_name=chat_name,
             flush_interval_seconds=float(
                 os.environ.get("FLUSH_INTERVAL_SECONDS", "30")
             ),

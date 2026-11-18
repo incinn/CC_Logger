@@ -27,6 +27,7 @@ class TestConfig(unittest.TestCase):
                 {
                     "AUTH_TOKENS_FILE": str(auth_tokens_path),
                     "DISCORD_WEBHOOK_URL": "https://example.com",
+                    "CHAT_NAME": "IronForged",
                 },
                 clear=True,
             ):
@@ -34,6 +35,7 @@ class TestConfig(unittest.TestCase):
 
         self.assertEqual(config.host, "0.0.0.0")
         self.assertEqual(config.port, 8080)
+        self.assertEqual(config.chat_name, "IronForged")
         self.assertEqual(
             config.auth_tokens,
             (("Alice", "test-token"), ("Bob", "bob-token")),
@@ -55,6 +57,7 @@ class TestConfig(unittest.TestCase):
                 {
                     "AUTH_TOKENS_FILE": str(auth_tokens_path),
                     "DISCORD_WEBHOOK_URL": "http://localhost/webhook",
+                    "CHAT_NAME": "OtherClan",
                     "HOST": "127.0.0.1",
                     "PORT": "9000",
                     "FLUSH_INTERVAL_SECONDS": "12.5",
@@ -68,6 +71,7 @@ class TestConfig(unittest.TestCase):
 
         self.assertEqual(config.host, "127.0.0.1")
         self.assertEqual(config.port, 9000)
+        self.assertEqual(config.chat_name, "OtherClan")
         self.assertEqual(config.flush_interval_seconds, 12.5)
         self.assertEqual(config.dedupe_ttl_seconds, 45)
         self.assertEqual(config.max_pending_messages, 50)
@@ -75,12 +79,16 @@ class TestConfig(unittest.TestCase):
 
     def test_from_env_requires_credentials(self) -> None:
         for environment in (
-            {},
-            {"AUTH_TOKENS_FILE": "missing.json"},
-            {"DISCORD_WEBHOOK_URL": "https://example.com"},
+            {"CHAT_NAME": "IronForged"},
+            {"AUTH_TOKENS_FILE": "missing.json", "CHAT_NAME": "IronForged"},
+            {
+                "DISCORD_WEBHOOK_URL": "https://example.com",
+                "CHAT_NAME": "IronForged",
+            },
             {
                 "AUTH_TOKENS_FILE": "missing.json",
                 "DISCORD_WEBHOOK_URL": "https://example.com",
+                "CHAT_NAME": "IronForged",
             },
         ):
             with self.subTest(environment=environment):
@@ -88,15 +96,35 @@ class TestConfig(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         Config.from_env()
 
+    def test_from_env_requires_chat_name(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            auth_tokens_path = Path(directory) / "auth_tokens.json"
+            auth_tokens_path.write_text(
+                json.dumps([{"name": "Alice", "token": "test-token"}]),
+                encoding="utf-8",
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "AUTH_TOKENS_FILE": str(auth_tokens_path),
+                    "DISCORD_WEBHOOK_URL": "https://example.com",
+                },
+                clear=True,
+            ):
+                with self.assertRaisesRegex(ValueError, "(?i)chat_name"):
+                    Config.from_env()
+
     def test_rejects_invalid_constructor_values(self) -> None:
         valid = {
             "host": "127.0.0.1",
             "port": 8080,
             "auth_tokens": (("Alice", "test-token"),),
             "discord_webhook_url": "https://example.com/webhook",
+            "chat_name": "IronForged",
         }
         invalid_values = (
             {"host": ""},
+            {"chat_name": " "},
             {"port": -1},
             {"port": 65536},
             {"auth_tokens": ()},
@@ -129,6 +157,7 @@ class TestConfig(unittest.TestCase):
                 {
                     "AUTH_TOKENS_FILE": str(auth_tokens_path),
                     "DISCORD_WEBHOOK_URL": "https://example.com",
+                    "CHAT_NAME": "IronForged",
                     "PORT": "not-a-port",
                 },
                 clear=True,
@@ -152,6 +181,7 @@ class TestConfig(unittest.TestCase):
                         {
                             "AUTH_TOKENS_FILE": str(auth_tokens_path),
                             "DISCORD_WEBHOOK_URL": "https://example.com",
+                            "CHAT_NAME": "IronForged",
                         },
                         clear=True,
                     ):
@@ -175,6 +205,7 @@ class TestConfig(unittest.TestCase):
                 {
                     "AUTH_TOKENS_FILE": str(auth_tokens_path),
                     "DISCORD_WEBHOOK_URL": "https://example.com",
+                    "CHAT_NAME": "IronForged",
                 },
                 clear=True,
             ):

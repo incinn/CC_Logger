@@ -60,6 +60,7 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
             port=0,
             auth_tokens=(("Alice", "test-token"),),
             discord_webhook_url=str(self.webhook_server.make_url("/webhook")),
+            chat_name="IronForged",
         )
         self.buffer = ChatBuffer()
         self.session = ClientSession()
@@ -197,6 +198,7 @@ class TestFlushLoop(unittest.IsolatedAsyncioTestCase):
                 port=0,
                 auth_tokens=(("Alice", "test-token"),),
                 discord_webhook_url="https://discord.com/api/webhooks/test",
+                chat_name="IronForged",
                 flush_interval_seconds=10,
             ),
             buffer=ChatBuffer(),
