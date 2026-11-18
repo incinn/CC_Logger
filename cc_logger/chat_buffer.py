@@ -2,6 +2,7 @@ from collections import deque
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
 import time
 import unicodedata
 
@@ -12,6 +13,7 @@ from cc_logger.chat_message import (
 )
 
 MESSAGE_TIMESTAMP_TOLERANCE_SECONDS = 5
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True, eq=False)
@@ -52,6 +54,10 @@ class ChatBuffer:
     def pending_count(self) -> int:
         return len(self._pending)
 
+    @property
+    def dedupe_count(self) -> int:
+        return self._seen_count
+
     def add_batch(
         self,
         messages: list[ChatMessage],
@@ -68,6 +74,8 @@ class ChatBuffer:
         new_records_by_message_id: dict[int, list[_BufferedMessage]] = {}
         planned_clients: dict[_BufferedMessage, set[str]] = {}
         accepted = 0
+        message_id_matches = 0
+        fingerprint_matches = 0
 
         for message in messages:
             fingerprint = self._fingerprint(message)
@@ -82,6 +90,8 @@ class ChatBuffer:
                 for record in message_id_candidates
                 if record.fingerprint == fingerprint
             ]
+            if matching_records:
+                message_id_matches += 1
 
             if not matching_records:
                 fingerprint_candidates = self._seen.get(
@@ -95,6 +105,8 @@ class ChatBuffer:
                     and abs(record.message.timestamp - message.timestamp)
                     <= MESSAGE_TIMESTAMP_TOLERANCE_SECONDS
                 ]
+                if matching_records:
+                    fingerprint_matches += 1
 
             if matching_records:
                 buffered_message = min(
@@ -150,6 +162,16 @@ class ChatBuffer:
             self._expiry.append((current_time, buffered_message))
             self._pending.append(buffered_message)
         self._seen_count += len(new_records)
+        if messages:
+            logger.debug(
+                "Dedupe batch from client=%s: message_id_matches=%d "
+                "fingerprint_matches=%d buffered=%d ignored=%d",
+                normalized_client_name,
+                message_id_matches,
+                fingerprint_matches,
+                len(new_records),
+                len(messages) - accepted,
+            )
         return accepted
 
     @staticmethod

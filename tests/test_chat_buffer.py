@@ -51,6 +51,21 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(self.add_batch([message, message], now=0), 1)
         self.assertEqual(self.buffer.pending_count, 1)
 
+    def test_logs_dedupe_match_method_without_message_content(self) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=1))
+        same_id = ChatMessage.from_payload(make_payload(message_id=1))
+        different_id = ChatMessage.from_payload(make_payload(message_id=2))
+
+        with self.assertLogs("cc_logger.chat_buffer", level="DEBUG") as logs:
+            self.add_batch([first], now=0)
+            self.add_batch([same_id], client_name="Bob", now=1)
+            self.add_batch([different_id], client_name="Charlie", now=2)
+
+        output = "\n".join(logs.output)
+        self.assertIn("message_id_matches=1", output)
+        self.assertIn("fingerprint_matches=1", output)
+        self.assertNotIn("Hello", output)
+
     def test_deduplicates_matching_message_id_despite_timestamp_difference(
         self,
     ) -> None:

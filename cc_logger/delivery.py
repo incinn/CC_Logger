@@ -4,6 +4,7 @@ from importlib.metadata import version
 import logging
 import math
 import random
+import time
 
 from aiohttp import ClientError
 
@@ -43,11 +44,15 @@ async def send_status(state: RuntimeState, message: str) -> bool:
     except Exception:
         logger.exception("Unexpected error sending Discord webhook status notification")
         return False
+    logger.info("Sent Discord status notification")
     return True
 
 
 async def flush_pending(state: RuntimeState) -> FlushResult:
     async with state.flush_lock:
+        started_at = time.monotonic()
+        delivered = 0
+        chunks = 0
         while chunk := state.buffer.peek_chunk():
             content, count = chunk
             try:
@@ -65,8 +70,17 @@ async def flush_pending(state: RuntimeState) -> FlushResult:
                                 response.headers.get("Retry-After")
                             )
                         logger.warning(
-                            "Discord webhook returned HTTP %s; keeping messages buffered",
+                            "Discord webhook failed: status=%d chunk_messages=%d "
+                            "delivered=%d pending=%d retry_after=%s",
                             response.status,
+                            count,
+                            delivered,
+                            state.buffer.pending_count,
+                            (
+                                f"{retry_after_seconds:.1f}s"
+                                if retry_after_seconds is not None
+                                else "unknown"
+                            ),
                         )
                         return FlushResult(
                             success=False,
@@ -74,16 +88,25 @@ async def flush_pending(state: RuntimeState) -> FlushResult:
                         )
             except (ClientError, asyncio.TimeoutError) as error:
                 logger.warning(
-                    "Discord webhook request failed (%s); keeping messages buffered",
+                    "Discord webhook request failed (%s): chunk_messages=%d "
+                    "delivered=%d pending=%d",
                     type(error).__name__,
+                    count,
+                    delivered,
+                    state.buffer.pending_count,
                 )
                 return FlushResult(success=False)
 
             state.buffer.discard(count)
+            delivered += count
+            chunks += 1
+        if chunks:
             logger.info(
-                "Delivered %d messages to Discord; %d pending",
-                count,
+                "Delivered messages=%d chunks=%d pending=%d duration_ms=%.1f",
+                delivered,
+                chunks,
                 state.buffer.pending_count,
+                (time.monotonic() - started_at) * 1000,
             )
         return FlushResult(success=True)
 
@@ -131,6 +154,11 @@ async def flush_loop(state: RuntimeState) -> None:
             result = FlushResult(success=False)
 
         if result.success:
+            if failure_count:
+                logger.info(
+                    "Discord delivery recovered after %d failed attempts",
+                    failure_count,
+                )
             failure_count = 0
             next_delay = interval
         else:

@@ -24,11 +24,15 @@ MAX_REQUEST_BYTES = 1_048_576
 async def _start_app(app: web.Application) -> None:
     config = app[CONFIG_KEY]
     logger.info(
-        "Starting CC Logger v%s on %s:%d (flush interval %.1fs, max pending %d, max dedupe IDs %d)",
+        "Starting CC Logger v%s on %s:%d (chat=%s, clients=%d, flush interval %.1fs, "
+        "dedupe TTL %.1fs, max pending %d, max dedupe IDs %d)",
         version("cc-logger"),
         config.host,
         config.port,
+        config.chat_name,
+        len(config.auth_tokens),
         config.flush_interval_seconds,
+        config.dedupe_ttl_seconds,
         config.max_pending_messages,
         config.max_dedupe_ids,
     )
@@ -56,9 +60,18 @@ async def _stop_app(app: web.Application) -> None:
         state.flush_task.cancel()
         await asyncio.gather(state.flush_task, return_exceptions=True)
     try:
-        await flush_pending(state)
+        result = await flush_pending(state)
+        if not result.success:
+            logger.error(
+                "Final flush failed during shutdown; %d messages will be lost",
+                state.buffer.pending_count,
+            )
     except Exception:
         logger.exception("Unexpected error flushing messages during shutdown")
+        logger.error(
+            "Final flush aborted during shutdown; %d messages will be lost",
+            state.buffer.pending_count,
+        )
     try:
         await send_status(state, OFFLINE_STATUS_MESSAGE)
     finally:
@@ -75,8 +88,17 @@ def create_app(config: Config) -> web.Application:
 
 
 def main() -> None:
-    configure_logging()
-    config = Config.from_env()
+    try:
+        configure_logging()
+    except ValueError as error:
+        logging.basicConfig(level=logging.INFO, force=True)
+        logger.critical("Logging configuration failed: %s", error)
+        raise SystemExit(1) from error
+    try:
+        config = Config.from_env()
+    except (OSError, ValueError) as error:
+        logger.critical("Startup configuration failed: %s", error)
+        raise SystemExit(1) from error
     web.run_app(create_app(config), host=config.host, port=config.port)
 
 

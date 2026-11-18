@@ -85,7 +85,8 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
             result = await flush_pending(self.state)
 
         self.assertTrue(result.success)
-        self.assertIn("Delivered 1 messages to Discord; 0 pending", logs.output[0])
+        self.assertIn("Delivered messages=1 chunks=1 pending=0", logs.output[0])
+        self.assertIn("duration_ms=", logs.output[0])
         self.assertEqual(
             self.webhook_payloads,
             [
@@ -114,23 +115,27 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
         self.add_message(make_payload())
         self.webhook_status = 503
 
-        with self.assertLogs("cc_logger", level="WARNING"):
+        with self.assertLogs("cc_logger", level="WARNING") as logs:
             result = await flush_pending(self.state)
 
         self.assertFalse(result.success)
         self.assertEqual(self.buffer.pending_count, 1)
+        self.assertIn("status=503", logs.output[0])
+        self.assertIn("messages=1", logs.output[0])
+        self.assertIn("pending=1", logs.output[0])
 
     async def test_flush_returns_retry_after_for_rate_limited_webhook(self) -> None:
         self.add_message(make_payload())
         self.webhook_status = 429
         self.webhook_headers = {"Retry-After": "5"}
 
-        with self.assertLogs("cc_logger", level="WARNING"):
+        with self.assertLogs("cc_logger", level="WARNING") as logs:
             result = await flush_pending(self.state)
 
         self.assertFalse(result.success)
         self.assertEqual(result.retry_after_seconds, 5)
         self.assertEqual(self.buffer.pending_count, 1)
+        self.assertIn("retry_after=5.0s", logs.output[0])
 
     async def test_status_notification_failure_returns_false(self) -> None:
         self.webhook_status = 503
@@ -141,9 +146,11 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(sent)
 
     async def test_status_notification_success_returns_true(self) -> None:
-        sent = await send_status(self.state, ":green_circle: ONLINE")
+        with self.assertLogs("cc_logger", level="INFO") as logs:
+            sent = await send_status(self.state, ":green_circle: ONLINE")
 
         self.assertTrue(sent)
+        self.assertIn("Sent Discord status notification", logs.output[0])
 
     async def test_flush_keeps_messages_after_request_timeout(self) -> None:
         self.add_message(make_payload())
@@ -229,7 +236,7 @@ class TestFlushLoop(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(success=True, retry_after_seconds=None),
         ]
         with (
-            self.assertLogs("cc_logger", level="WARNING") as logs,
+            self.assertLogs("cc_logger", level="INFO") as logs,
             patch("cc_logger.delivery.asyncio.sleep", sleep),
             patch("cc_logger.delivery.flush_pending", new_callable=AsyncMock) as flush,
         ):
@@ -240,6 +247,9 @@ class TestFlushLoop(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call.args[0] for call in sleep.await_args_list], [10, 25, 10])
         self.assertIn("retrying in 25.0 seconds", logs.output[0])
         self.assertIn("attempt 1", logs.output[0])
+        self.assertIn(
+            "Discord delivery recovered after 1 failed attempts", logs.output[1]
+        )
 
     async def test_applies_exponential_backoff_with_jitter(self) -> None:
         with patch(
