@@ -246,7 +246,7 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await second.json(), {"accepted": 1})
         self.assertEqual(
             self.app[STATE_KEY].buffer.peek_chunk(),
-            ('<t:1609459200:t> **Player** "Shared message" (2)\n', 1),
+            ("<t:1609459200:t> [2] **Player**: Shared message\n", 1),
         )
 
     async def test_rejects_invalid_payload(self) -> None:

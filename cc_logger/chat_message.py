@@ -80,7 +80,8 @@ class ChatMessage:
         ):
             raise ValueError("confidence must be a positive integer")
 
+        prefix = f"<t:{self.timestamp}:t> [{confidence}] "
         is_system = self.sender.casefold() == self.chat_name.casefold()
         if is_system:
-            return f"-# <t:{self.timestamp}:t> *{self.message}* ({confidence})\n"
-        return f'<t:{self.timestamp}:t> **{self.sender}** "{self.message}" ({confidence})\n'
+            return f"-# {prefix}{self.message}\n"
+        return f"{prefix}**{self.sender}**: {self.message}\n"

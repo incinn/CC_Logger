@@ -67,7 +67,7 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(self.buffer.pending_count, 1)
         self.assertEqual(
             self.buffer.peek_chunk(),
-            ('<t:1609459200:t> **Player** "Hello" (2)\n', 1),
+            ("<t:1609459200:t> [2] **Player**: Hello\n", 1),
         )
 
     def test_does_not_deduplicate_message_id_with_different_content(self) -> None:
@@ -161,7 +161,7 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(self.add_batch([second], client_name="Bob", now=1), 1)
         self.assertEqual(
             self.buffer.peek_chunk(),
-            ('<t:1609459200:t> **OriginalSender** "Hello" (2)\n', 1),
+            ("<t:1609459200:t> [2] **OriginalSender**: Hello\n", 1),
         )
         self.assertEqual(self.buffer.pending_count, 1)
 
@@ -189,8 +189,8 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(
             self.buffer.peek_chunk(),
             (
-                '<t:1609459200:t> **Player** "Hello" (1)\n'
-                '<t:1609459206:t> **Player** "Hello" (1)\n',
+                "<t:1609459200:t> [1] **Player**: Hello\n"
+                "<t:1609459206:t> [1] **Player**: Hello\n",
                 2,
             ),
         )
@@ -212,8 +212,8 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(
             self.buffer.peek_chunk(),
             (
-                '<t:1609459200:t> **Player** "Hello" (2)\n'
-                '<t:1609459206:t> **Player** "Hello" (1)\n',
+                "<t:1609459200:t> [2] **Player**: Hello\n"
+                "<t:1609459206:t> [1] **Player**: Hello\n",
                 2,
             ),
         )
@@ -225,7 +225,7 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(self.add_batch([message], now=1), 0)
         self.assertEqual(
             self.buffer.peek_chunk(),
-            ('<t:1609459200:t> **Player** "Hello" (1)\n', 1),
+            ("<t:1609459200:t> [1] **Player**: Hello\n", 1),
         )
 
     def test_discards_same_fingerprint_received_after_delivery(self) -> None:
@@ -246,8 +246,8 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(
             self.buffer.peek_chunk(),
             (
-                '<t:1609459200:t> **Alice** "Hello" (1)\n'
-                '<t:1609459200:t> **Bob** "Hello" (1)\n',
+                "<t:1609459200:t> [1] **Alice**: Hello\n"
+                "<t:1609459200:t> [1] **Bob**: Hello\n",
                 2,
             ),
         )

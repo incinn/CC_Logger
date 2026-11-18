@@ -90,14 +90,14 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
             self.webhook_payloads,
             [
                 {
-                    "content": '\u200b\n<t:1609459200:t> **Player** "Hello" (1)\n',
+                    "content": "\u200b\n<t:1609459200:t> [1] **Player**: Hello\n",
                     "allowed_mentions": {"parse": []},
                 }
             ],
         )
         self.assertEqual(self.buffer.pending_count, 0)
 
-    async def test_flush_renders_system_message_as_subtext(self) -> None:
+    async def test_flush_formats_system_message_as_subtext_without_author(self) -> None:
         self.add_message(
             make_payload(sender="Clan", chat_name="Clan", message="Restarting")
         )
@@ -107,7 +107,7 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.success)
         self.assertEqual(
             self.webhook_payloads[0]["content"],
-            "\u200b\n-# <t:1609459200:t> *Restarting* (1)\n",
+            "\u200b\n-# <t:1609459200:t> [1] Restarting\n",
         )
 
     async def test_flush_keeps_messages_after_webhook_failure(self) -> None:
@@ -177,8 +177,8 @@ class TestWebhookDelivery(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.success)
         self.assertEqual(self.buffer.pending_count, 1)
         self.assertEqual(len(self.webhook_payloads), 2)
-        self.assertIn('"FIRST', self.webhook_payloads[0]["content"])
-        self.assertIn('"SECOND', self.webhook_payloads[1]["content"])
+        self.assertIn("FIRST", self.webhook_payloads[0]["content"])
+        self.assertIn("SECOND", self.webhook_payloads[1]["content"])
 
     def test_parse_retry_after_rejects_invalid_values(self) -> None:
         for value in (None, "invalid", "nan", "inf", "-1"):

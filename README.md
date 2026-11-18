@@ -38,15 +38,15 @@ return HTTP 401, and full in-memory buffers return HTTP 503.
 Each message is formatted as:
 
 ```text
-<t:UNIX:t> **sender** "message"
+<t:UNIX:t> [confidence] **sender**: message
 ```
 
 Discord renders `<t:UNIX:t>` as localized time in each viewer's timezone.
-Messages whose sender matches `chatName` are detected as system messages
-(collection log, rare drops etc) and are rendered slightly differently:
+The confidence count shows how many clients reported the message. System
+messages (collection log, rare drops, etc.) omit the sender:
 
 ```text
--# <t:UNIX:t> *message*
+-# <t:UNIX:t> [confidence] message
 ```
 
 Each webhook post starts with an invisible character and newline so the first
