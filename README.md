@@ -7,8 +7,10 @@ a Discord webhook every X seconds.
 
 ## Docker
 
-Copy `.env.example` to `.env` and set real values for `INGEST_TOKEN` and
-`DISCORD_WEBHOOK_URL`. Start development or production container with:
+Copy `.env.example` to `.env`, set `CHAT_NAME` and `DISCORD_WEBHOOK_URL`, and
+configure client credentials in `auth_tokens.json` using
+`auth_tokens.example.json` as a template. Start development or production
+container with:
 
 ```bash
 make up       # development image (source and tests mounted)
@@ -36,15 +38,15 @@ return HTTP 401, and full in-memory buffers return HTTP 503.
 Each message is formatted as:
 
 ```text
-<t:UNIX:t> **sender** "message"
+<t:UNIX:t> [confidence] **sender**: message
 ```
 
 Discord renders `<t:UNIX:t>` as localized time in each viewer's timezone.
-Messages whose sender matches `chatName` are detected as system messages
-(collection log, rare drops etc) and are rendered slightly differently:
+The confidence count shows how many clients reported the message. System
+messages (collection log, rare drops, etc.) omit the sender:
 
 ```text
--# <t:UNIX:t> *message*
+-# <t:UNIX:t> [confidence] message
 ```
 
 Each webhook post starts with an invisible character and newline so the first
@@ -58,8 +60,9 @@ Discord's 2,000-character limit. Mention parsing is disabled.
 | `HOST`                   | `0.0.0.0` | HTTP bind address                             |
 | `PORT`                   | `8080`    | HTTP port                                     |
 | `LOG_LEVEL`              | `INFO`    | Console verbosity (`DEBUG` through `CRITICAL`) |
-| `INGEST_TOKEN`           | Required  | Shared secret checked against `Authorization` |
+| `AUTH_TOKENS_FILE`       | `/run/secrets/auth_tokens.json` | JSON file with client names and shared secrets |
 | `DISCORD_WEBHOOK_URL`    | Required  | Discord incoming webhook URL                  |
+| `CHAT_NAME`              | Required  | Exact clan chat name accepted from clients (case-insensitive) |
 | `FLUSH_INTERVAL_SECONDS` | `30`      | Webhook flush interval                        |
 | `DEDUPE_TTL_SECONDS`     | `600`     | How long message IDs remain deduplicated      |
 | `MAX_PENDING_MESSAGES`   | `20000`   | Maximum buffered chat lines                   |

@@ -31,10 +31,33 @@ class TestChatMessage(unittest.TestCase):
         message = ChatMessage.from_payload(make_payload())
 
         self.assertEqual(
-            message.format_discord(), '<t:1609459200:t> **Player** "Hello" (1)\n'
+            message.format_discord(), "<t:1609459200:t> [1] **Player**: Hello\n"
         )
 
-    def test_system_sender_is_omitted_and_content_italicized(self) -> None:
+    def test_escapes_message_markdown_and_collapses_line_breaks(self) -> None:
+        payload = make_payload()
+        payload["message"] = "**bold** [link](https://example.com)\nnext <@123> +!{}.-"
+        message = ChatMessage.from_payload(payload)
+
+        self.assertEqual(
+            message.format_discord(),
+            "<t:1609459200:t> [1] **Player**: "
+            r"\*\*bold\*\* \[link\]\(https://example.com\) "
+            r"next \<@123\> +!{}.-"
+            "\n",
+        )
+
+    def test_escapes_sender_markdown_and_collapses_line_breaks(self) -> None:
+        payload = make_payload()
+        payload["sender"] = "**Player**\n<t:123>"
+        message = ChatMessage.from_payload(payload)
+
+        self.assertEqual(
+            message.format_discord(),
+            r"<t:1609459200:t> [1] **\*\*Player\*\* \<t:123\>**: Hello" "\n",
+        )
+
+    def test_system_sender_is_omitted_from_new_format(self) -> None:
         payload = make_payload()
         payload["sender"] = "iRoNfOrGeD"
         payload["chatName"] = "IRONFORGED"
@@ -42,7 +65,7 @@ class TestChatMessage(unittest.TestCase):
 
         self.assertEqual(
             message.format_discord(),
-            "-# <t:1609459200:t> *Hello* (1)\n",
+            "-# <t:1609459200:t> [1] Hello\n",
         )
 
     def test_sender_named_iron_forged_is_normal_when_not_chat_name(self) -> None:
@@ -53,7 +76,7 @@ class TestChatMessage(unittest.TestCase):
 
         self.assertEqual(
             message.format_discord(),
-            '<t:1609459200:t> **Iron Forged** "Hello" (1)\n',
+            "<t:1609459200:t> [1] **Iron Forged**: Hello\n",
         )
 
     def test_removes_runelite_image_tags_from_message(self) -> None:
@@ -73,7 +96,7 @@ class TestChatMessage(unittest.TestCase):
         self.assertEqual(message.message, "LilBuff has joined.")
         self.assertEqual(
             message.format_discord(),
-            "-# <t:1609459200:t> *LilBuff has joined.* (1)\n",
+            "-# <t:1609459200:t> [1] LilBuff has joined.\n",
         )
 
     def test_rejects_line_that_cannot_fit_webhook_prefix(self) -> None:

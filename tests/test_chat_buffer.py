@@ -37,18 +37,122 @@ class TestChatBuffer(unittest.TestCase):
     ) -> int | None:
         return self.buffer.add_batch(messages, client_name=client_name, now=now)
 
-    def test_adds_message_and_deduplicates_by_fingerprint(self) -> None:
-        message = ChatMessage.from_payload(make_payload())
+    def test_deduplicates_fingerprint_across_clients_within_window(self) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=1))
+        second = ChatMessage.from_payload(make_payload(message_id=2))
 
-        self.assertEqual(self.add_batch([message], now=0), 1)
-        self.assertEqual(self.add_batch([message], now=1), 0)
+        self.assertEqual(self.add_batch([first], now=0), 1)
+        self.assertEqual(self.add_batch([second], client_name="Bob", now=1), 1)
         self.assertEqual(self.buffer.pending_count, 1)
 
-    def test_deduplicates_repeated_fingerprints_inside_batch(self) -> None:
+    def test_deduplicates_repeated_message_id_inside_batch(self) -> None:
         message = ChatMessage.from_payload(make_payload())
 
         self.assertEqual(self.add_batch([message, message], now=0), 1)
         self.assertEqual(self.buffer.pending_count, 1)
+
+    def test_logs_dedupe_match_method_without_message_content(self) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=1))
+        same_id = ChatMessage.from_payload(make_payload(message_id=1))
+        different_id = ChatMessage.from_payload(make_payload(message_id=2))
+
+        with self.assertLogs("cc_logger.chat_buffer", level="DEBUG") as logs:
+            self.add_batch([first], now=0)
+            self.add_batch([same_id], client_name="Bob", now=1)
+            self.add_batch([different_id], client_name="Charlie", now=2)
+
+        output = "\n".join(logs.output)
+        self.assertIn("message_id_matches=1", output)
+        self.assertIn("fingerprint_matches=1", output)
+        self.assertNotIn("Hello", output)
+
+    def test_deduplicates_matching_message_id_despite_timestamp_difference(
+        self,
+    ) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=100))
+        second = ChatMessage.from_payload(
+            make_payload(
+                message_id=100,
+                timestamp="2021-01-01T00:01:00Z",
+            )
+        )
+
+        self.assertEqual(self.add_batch([first], now=0), 1)
+        self.assertEqual(self.add_batch([second], client_name="Bob", now=1), 1)
+        self.assertEqual(self.buffer.pending_count, 1)
+        self.assertEqual(
+            self.buffer.peek_chunk(),
+            ("<t:1609459200:t> [2] **Player**: Hello\n", 1),
+        )
+
+    def test_does_not_deduplicate_message_id_with_different_content(self) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=100))
+        second = ChatMessage.from_payload(
+            make_payload(message_id=100, message="Different")
+        )
+
+        self.assertEqual(self.add_batch([first, second], now=0), 2)
+        self.assertEqual(self.buffer.pending_count, 2)
+
+    def test_fingerprint_fallback_normalizes_unicode_and_line_endings(self) -> None:
+        first = ChatMessage.from_payload(
+            make_payload(
+                message_id=1,
+                sender="Café",
+                message="first\r\nsecond",
+            )
+        )
+        second = ChatMessage.from_payload(
+            make_payload(
+                message_id=2,
+                timestamp="2021-01-01T00:00:01Z",
+                sender="Cafe\u0301",
+                message="first\nsecond",
+            )
+        )
+
+        self.assertEqual(self.add_batch([first], now=0), 1)
+        self.assertEqual(self.add_batch([second], client_name="Bob", now=1), 1)
+        self.assertEqual(self.buffer.pending_count, 1)
+
+    def test_fingerprint_fallback_does_not_merge_repeated_same_client_message(
+        self,
+    ) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=1))
+        second = ChatMessage.from_payload(
+            make_payload(message_id=2, timestamp="2021-01-01T00:00:01Z")
+        )
+
+        self.assertEqual(self.add_batch([first], now=0), 1)
+        self.assertEqual(self.add_batch([second], now=1), 1)
+        self.assertEqual(self.buffer.pending_count, 2)
+
+    def test_expires_seen_message_ids(self) -> None:
+        message = ChatMessage.from_payload(make_payload(message_id=100))
+        self.add_batch([message], now=0)
+        replacement = ChatMessage.from_payload(
+            make_payload(
+                message_id=100,
+                timestamp="2021-01-01T00:01:00Z",
+            )
+        )
+
+        self.assertEqual(self.add_batch([replacement], now=61), 1)
+        self.assertEqual(self.buffer.pending_count, 2)
+
+    def test_zero_message_id_does_not_deduplicate_outside_timestamp_window(
+        self,
+    ) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=0))
+        second = ChatMessage.from_payload(
+            make_payload(
+                message_id=0,
+                timestamp="2021-01-01T00:01:00Z",
+            )
+        )
+
+        self.assertEqual(self.add_batch([first, second], now=0), 2)
+        self.assertEqual(self.buffer.pending_count, 2)
 
     def test_increases_confidence_for_same_author_content_within_three_seconds(
         self,
@@ -72,16 +176,26 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(self.add_batch([second], client_name="Bob", now=1), 1)
         self.assertEqual(
             self.buffer.peek_chunk(),
-            ('<t:1609459200:t> **OriginalSender** "Hello" (2)\n', 1),
+            ("<t:1609459200:t> [2] **OriginalSender**: Hello\n", 1),
         )
         self.assertEqual(self.buffer.pending_count, 1)
 
-    def test_does_not_merge_same_author_content_more_than_three_seconds_apart(
+    def test_merges_same_author_content_within_five_seconds(self) -> None:
+        first = ChatMessage.from_payload(make_payload(message_id=1))
+        second = ChatMessage.from_payload(
+            make_payload(message_id=2, timestamp="2021-01-01T00:00:05Z")
+        )
+
+        self.add_batch([first], now=0)
+        self.assertEqual(self.add_batch([second], client_name="Bob", now=1), 1)
+        self.assertEqual(self.buffer.pending_count, 1)
+
+    def test_does_not_merge_same_author_content_more_than_five_seconds_apart(
         self,
     ) -> None:
         first = ChatMessage.from_payload(make_payload(message_id=1))
         second = ChatMessage.from_payload(
-            make_payload(message_id=2, timestamp="2021-01-01T00:00:04Z")
+            make_payload(message_id=2, timestamp="2021-01-01T00:00:06Z")
         )
 
         self.add_batch([first], now=0)
@@ -90,8 +204,8 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(
             self.buffer.peek_chunk(),
             (
-                '<t:1609459200:t> **Player** "Hello" (1)\n'
-                '<t:1609459204:t> **Player** "Hello" (1)\n',
+                "<t:1609459200:t> [1] **Player**: Hello\n"
+                "<t:1609459206:t> [1] **Player**: Hello\n",
                 2,
             ),
         )
@@ -113,8 +227,8 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(
             self.buffer.peek_chunk(),
             (
-                '<t:1609459200:t> **Player** "Hello" (2)\n'
-                '<t:1609459206:t> **Player** "Hello" (1)\n',
+                "<t:1609459200:t> [2] **Player**: Hello\n"
+                "<t:1609459206:t> [1] **Player**: Hello\n",
                 2,
             ),
         )
@@ -126,7 +240,7 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(self.add_batch([message], now=1), 0)
         self.assertEqual(
             self.buffer.peek_chunk(),
-            ('<t:1609459200:t> **Player** "Hello" (1)\n', 1),
+            ("<t:1609459200:t> [1] **Player**: Hello\n", 1),
         )
 
     def test_discards_same_fingerprint_received_after_delivery(self) -> None:
@@ -147,8 +261,8 @@ class TestChatBuffer(unittest.TestCase):
         self.assertEqual(
             self.buffer.peek_chunk(),
             (
-                '<t:1609459200:t> **Alice** "Hello" (1)\n'
-                '<t:1609459200:t> **Bob** "Hello" (1)\n',
+                "<t:1609459200:t> [1] **Alice**: Hello\n"
+                "<t:1609459200:t> [1] **Bob**: Hello\n",
                 2,
             ),
         )
