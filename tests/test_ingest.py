@@ -44,10 +44,11 @@ class TestMessageEndpoint(unittest.IsolatedAsyncioTestCase):
         await self.webhook_server.close()
 
     def test_rate_limits_unauthorized_request_logs(self) -> None:
-        ingest_module._last_unauthorized_log_at = None
-        ingest_module._suppressed_unauthorized_requests = 0
-
-        with self.assertLogs("cc_logger.ingest", level="WARNING") as logs:
+        with (
+            patch.object(ingest_module, "_last_unauthorized_log_at", None),
+            patch.object(ingest_module, "_suppressed_unauthorized_requests", 0),
+            self.assertLogs("cc_logger.ingest", level="WARNING") as logs,
+        ):
             ingest_module._log_unauthorized_request("192.0.2.1", 100)
             ingest_module._log_unauthorized_request("192.0.2.1", 101)
             ingest_module._log_unauthorized_request("192.0.2.1", 160)
