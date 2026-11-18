@@ -78,23 +78,22 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(config.max_dedupe_ids, 75)
 
     def test_from_env_requires_credentials(self) -> None:
-        for environment in (
-            {"CHAT_NAME": "IronForged"},
-            {"AUTH_TOKENS_FILE": "missing.json", "CHAT_NAME": "IronForged"},
-            {
-                "DISCORD_WEBHOOK_URL": "https://example.com",
-                "CHAT_NAME": "IronForged",
-            },
-            {
-                "AUTH_TOKENS_FILE": "missing.json",
-                "DISCORD_WEBHOOK_URL": "https://example.com",
-                "CHAT_NAME": "IronForged",
-            },
-        ):
-            with self.subTest(environment=environment):
-                with patch.dict(os.environ, environment, clear=True):
-                    with self.assertRaises(ValueError):
-                        Config.from_env()
+        with tempfile.TemporaryDirectory() as directory:
+            missing_auth_tokens_path = Path(directory) / "missing.json"
+            for environment in (
+                {"CHAT_NAME": "IronForged"},
+                {
+                    "DISCORD_WEBHOOK_URL": "https://example.com",
+                    "CHAT_NAME": "IronForged",
+                },
+            ):
+                test_environment = environment | {
+                    "AUTH_TOKENS_FILE": str(missing_auth_tokens_path)
+                }
+                with self.subTest(environment=test_environment):
+                    with patch.dict(os.environ, test_environment, clear=True):
+                        with self.assertRaises(ValueError):
+                            Config.from_env()
 
     def test_from_env_requires_chat_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
